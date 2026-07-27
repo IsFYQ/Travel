@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <!-- A-03 追问建议 - 灯泡 -->
+  <path d="M10 18 L14 18 L13 21 L11 21 Z" stroke="#757575" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+  <path d="M12 5 A5 5 0 1 0 8.5 11 L9 12 A1 1 0 0 0 9.5 13 L14.5 13 A1 1 0 0 0 15 12 L15 11 A5 5 0 0 0 12 5" stroke="#757575" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+</svg>

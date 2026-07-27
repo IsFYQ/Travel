@@ -1,0 +1,27 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#42A5F5"/>
+      <stop offset="0.55" stop-color="#2196F3"/>
+      <stop offset="1" stop-color="#1976D2"/>
+    </linearGradient>
+    <linearGradient id="highlight" x1="512" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white"/>
+      <stop offset="1" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect width="1024" height="1024" rx="229" ry="229"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <rect width="1024" height="512" fill="url(#highlight)" opacity="0.18"/>
+    <circle cx="870" cy="150" r="200" fill="white" opacity="0.1"/>
+    <path d="M82 778 C 82 778, 184 655, 287 573 C 389 492, 451 614, 533 573 C 614 533, 717 389, 819 512 C 881 594, 942 655, 942 778 Z" fill="white"/>
+    <circle cx="758" cy="328" r="51" fill="#FFE082"/>
+    <path d="M225 369 Q451 225 717 348" stroke="white" stroke-width="15" stroke-linecap="round" stroke-dasharray="20 31" fill="none" opacity="0.85"/>
+    <g transform="translate(737, 328) rotate(-30)">
+      <path d="M-72 0 L72 0 L41 -20 L20 -20 L0 -41 L-20 -20 L-41 -20 Z" fill="white"/>
+    </g>
+  </g>
+</svg>

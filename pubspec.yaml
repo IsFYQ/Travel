@@ -1,0 +1,74 @@
+name: travel
+description: 旅游 AI 智能助手 - 记录旅行、AI做攻略、发现新目的地
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # 数据库
+  sqflite: ^2.4.1
+  path_provider: ^2.1.5
+  path: ^1.9.0
+
+  # KV 存储
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # 网络
+  http: ^1.2.2
+
+  # 安全存储
+  flutter_secure_storage: ^9.2.3
+
+  # 状态管理
+  provider: ^6.1.2
+
+  # 图片选择
+  image_picker: ^1.1.2
+
+  # 工具
+  intl: ^0.19.0
+  uuid: ^4.5.1
+  json_annotation: ^4.9.0
+
+  # SVG 图标
+  flutter_svg: ^2.0.16
+
+  # 保存图片到相册
+  image_gallery_saver2: ^2.0.1
+
+  # 运行时权限
+  permission_handler: ^11.3.1
+
+  # Markdown 渲染
+  flutter_markdown: ^0.7.4
+
+  # 本地化
+  flutter_localizations:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/icons/ic_launcher.png"
+  adaptive_icon_background: "#2196F3"
+  adaptive_icon_foreground: "assets/icons/ic_launcher.png"
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/prompts/
+    - assets/images/
+    - assets/icons/

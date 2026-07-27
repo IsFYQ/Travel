@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>旅行搭子 - 图标设计系统</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8f9fa; color: #333; padding: 32px 24px; }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 28px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { color: #757575; font-size: 14px; margin-bottom: 40px; }
+  .section { margin-bottom: 48px; }
+  .section-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid #e0e0e0; display: flex; align-items: center; gap: 8px; }
+  .section-title .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; color: #fff; }
+  .badge-p0 { background: #2196F3; }
+  .badge-p1 { background: #FF7043; }
+  .badge-p2 { background: #757575; }
+  .icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 16px; }
+  .icon-card { background: #fff; border-radius: 8px; padding: 16px 8px 12px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: box-shadow 0.2s; }
+  .icon-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.1); }
+  .icon-preview { width: 48px; height: 48px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; }
+  .icon-preview.large { width: 80px; height: 80px; }
+  .icon-preview.xlarge { width: 120px; height: 120px; }
+  .icon-preview img { max-width: 100%; max-height: 100%; }
+  .icon-label { font-size: 11px; color: #333; font-weight: 500; word-break: break-all; }
+  .icon-code { font-size: 10px; color: #999; margin-top: 2px; }
+  .color-chip { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 4px; border: 1px solid rgba(0,0,0,0.1); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 16px 0 8px; font-size: 12px; color: #757575; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .full-width { grid-column: 1 / -1; }
+  @media (max-width: 600px) {
+    .icon-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+    body { padding: 16px 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎒 旅行搭子 · 图标设计系统</h1>
+  <p class="subtitle">共 <strong>57</strong> 个图标 · 简约几何风格 · 24×24dp 画板 · SVG 矢量格式</p>
+
+  <div class="legend">
+    <span class="legend-item"><span class="color-chip" style="background:#2196F3"></span> 海洋蓝 #2196F3 主色</span>
+    <span class="legend-item"><span class="color-chip" style="background:#FF7043"></span> 珊瑚橙 #FF7043 强调/花费</span>
+    <span class="legend-item"><span class="color-chip" style="background:#4CAF50"></span> 薄荷绿 #4CAF50 完成</span>
+    <span class="legend-item"><span class="color-chip" style="background:#757575"></span> 中灰 #757575 默认</span>
+    <span class="legend-item"><span class="color-chip" style="background:#BDBDBD"></span> 浅灰 #BDBDBD 禁用</span>
+  </div>
+
+  <!-- ========== P0: App 主图标 ========== -->
+  <div class="section">
+    <div class="section-title"><span class="badge badge-p0">P0</span> App 主图标</div>
+    <div class="icon-grid">
+      <div class="icon-card">
+        <div class="icon-preview xlarge"><img src="../svg/ic_launcher.svg" alt="L-01" onerror="this.parentElement.textContent='SVG'"></div>
+        <div class="icon-label">应用主图标</div>
+        <div class="icon-code">L-01 · 1024×1024</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== P0: 底部导航栏 ========== -->
+  <div class="section">
+    <div class="section-title"><span class="badge badge-p0">P0</span> 底部导航栏</div>
+    <div class="icon-grid">
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/timeline_unselected.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">时间线 默认</div><div class="icon-code">N-01 · 24dp</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/timeline_selected.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">时间线 选中</div><div class="icon-code">N-01 · 24dp</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/map_unselected.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">攻略/地图 默认</div><div class="icon-code">N-02 · 24dp</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/map_selected.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">攻略/地图 选中</div><div class="icon-code">N-02 · 24dp</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/chat_unselected.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">AI对话 默认</div><div class="icon-code">N-03 · 24dp</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/chat_selected.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">AI对话 选中</div><div class="icon-code">N-03 · 24dp</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/person_unselected.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">我的 默认</div><div class="icon-code">N-04 · 24dp</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/person_selected.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">我的 选中</div><div class="icon-code">N-04 · 24dp</div></div>
+    </div>
+  </div>
+
+  <!-- ========== P0: 空状态引导大图标 ========== -->
+  <div class="section">
+    <div class="section-title"><span class="badge badge-p0">P0</span> 空状态引导大图标</div>
+    <div class="icon-grid">
+      <div class="icon-card"><div class="icon-preview large"><img src="../svg/empty_travel.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">暂无旅行记录</div><div class="icon-code">E-01 · 80dp</div></div>
+      <div class="icon-card"><div class="icon-preview large"><img src="../svg/empty_chat.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">暂无对话记录</div><div class="icon-code">E-02 · 80dp</div></div>
+      <div class="icon-card"><div class="icon-preview large"><img src="../svg/empty_guide.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">暂无攻略</div><div class="icon-code">E-03 · 80dp</div></div>
+    </div>
+  </div>
+
+  <!-- ========== P1: 首页功能图标 ========== -->
+  <div class="section">
+    <div class="section-title"><span class="badge badge-p1">P1</span> 首页功能图标</div>
+    <div class="icon-grid">
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f01_add_diary.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">新增日记</div><div class="icon-code">F-01 · FAB</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f02_city_count.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">城市统计</div><div class="icon-code">F-02 · 统计卡片</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f03_trip_count.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">旅行次数</div><div class="icon-code">F-03 · 统计卡片</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f04_travel_days.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">旅行天数</div><div class="icon-code">F-04 · 统计卡片</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f05_total_cost.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">总花费</div><div class="icon-code">F-05 · 统计卡片</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f06_search.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">搜索</div><div class="icon-code">F-06 · 搜索栏</div></div>
+    </div>
+  </div>
+
+  <!-- ========== P1: AI 对话页 ========== -->
+  <div class="section">
+    <div class="section-title"><span class="badge badge-p1">P1</span> AI 对话页图标</div>
+    <div class="icon-grid">
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f07_ai_avatar.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">AI 头像</div><div class="icon-code">F-07 · 气泡左侧</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f08_send.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">发送</div><div class="icon-code">F-08 · 输入框右侧</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f09_new_chat.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">新建对话</div><div class="icon-code">F-09 · 右上角</div></div>
+    </div>
+  </div>
+
+  <!-- ========== P1: 攻略详情页 ========== -->
+  <div class="section">
+    <div class="section-title"><span class="badge badge-p1">P1</span> 攻略详情页图标</div>
+    <div class="icon-grid">
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f10_execution_view.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">执行视图</div><div class="icon-code">F-10 · 切换按钮</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f11_edit_mode.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">编辑模式</div><div class="icon-code">F-11 · 切换按钮</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f12_guide_to_diary.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">攻略转日记</div><div class="icon-code">F-12 · 右上角</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f13_trip_done.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">行程完成</div><div class="icon-code">F-13 · 完成标记</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f14_trip_pending.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">行程未完成</div><div class="icon-code">F-14 · 待办标记</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f15_skip_item.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">跳过行程</div><div class="icon-code">F-15 · 行程项后</div></div>
+    </div>
+  </div>
+
+  <!-- ========== P1: 日记编辑器 ========== -->
+  <div class="section">
+    <div class="section-title"><span class="badge badge-p1">P1</span> 日记编辑器图标</div>
+    <div class="icon-grid">
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f16_camera.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">拍照</div><div class="icon-code">F-16 · 底部</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/f17_image_picker.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">相册选图</div><div class="icon-code">F-17 · 底部</div></div>
+    </div>
+  </div>
+
+  <!-- ========== P2: 通用交互 ========== -->
+  <div class="section">
+    <div class="section-title"><span class="badge badge-p2">P2</span> 通用交互图标</div>
+    <div class="icon-grid">
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a01_clear_search.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">清除搜索</div><div class="icon-code">A-01</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a02_image_placeholder.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">图片占位</div><div class="icon-code">A-02</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a03_suggestion.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">追问建议</div><div class="icon-code">A-03</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a04_star_filled.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">评分星（实心）</div><div class="icon-code">A-04</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a05_star_empty.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">评分星（空心）</div><div class="icon-code">A-05</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a06_add_note.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">添加备注</div><div class="icon-code">A-06</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a07_date_picker.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">日期选择</div><div class="icon-code">A-07</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a08_decrease_people.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">减少人数</div><div class="icon-code">A-08</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a09_increase_people.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">增加人数</div><div class="icon-code">A-09</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a10_expand.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">展开</div><div class="icon-code">A-10</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a11_collapse.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">收起</div><div class="icon-code">A-11</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a12_delete_image.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">删除图片</div><div class="icon-code">A-12</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a13_set_cover.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">设为封面</div><div class="icon-code">A-13</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a23_arrow_right.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">右箭头</div><div class="icon-code">A-23</div></div>
+    </div>
+  </div>
+
+  <!-- ========== P2: 设置与系统 ========== -->
+  <div class="section">
+    <div class="section-title"><span class="badge badge-p2">P2</span> 设置与系统图标</div>
+    <div class="icon-grid">
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a14_api_key.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">API 密钥</div><div class="icon-code">A-14</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a15_eye_toggle.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">显示/隐藏密钥</div><div class="icon-code">A-15</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a16_save.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">保存</div><div class="icon-code">A-16</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a17_test_connection.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">测试连接</div><div class="icon-code">A-17</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a18_connection_ok.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">连接成功</div><div class="icon-code">A-18</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a19_knowledge_base.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">知识库管理</div><div class="icon-code">A-19</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a20_backup.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">数据备份</div><div class="icon-code">A-20</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a21_ima_sync.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">IMA 同步</div><div class="icon-code">A-21</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a22_about.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">关于</div><div class="icon-code">A-22</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a24_test_ima.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">测试IMA</div><div class="icon-code">A-24</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a25_folder.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">文件夹</div><div class="icon-code">A-25</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a26_cloud_download.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">云下载</div><div class="icon-code">A-26</div></div>
+    </div>
+  </div>
+
+  <!-- ========== P2: 攻略元数据 ========== -->
+  <div class="section">
+    <div class="section-title"><span class="badge badge-p2">P2</span> 攻略卡片图标</div>
+    <div class="icon-grid">
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a27_guide_date.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">攻略日期</div><div class="icon-code">A-27</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a28_guide_people.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">攻略人数</div><div class="icon-code">A-28</div></div>
+      <div class="icon-card"><div class="icon-preview"><img src="../svg/a29_guide_budget.svg" onerror="this.parentElement.textContent='SVG'"></div><div class="icon-label">攻略预算</div><div class="icon-code">A-29</div></div>
+    </div>
+  </div>
+
+  <div class="section" style="margin-top: 64px; padding: 24px; background: #fff; border-radius: 8px; border: 1px solid #e0e0e0;">
+    <h3 style="font-size: 14px; margin-bottom: 8px;">设计说明</h3>
+    <ul style="font-size: 12px; color: #757575; line-height: 1.8; padding-left: 16px;">
+      <li>线性（Outlined）+ 填充（Filled）双态风格，线宽统一 1.5-2px</li>
+      <li>24×24dp 画板，内容安全区域 20×20dp</li>
+      <li>圆角统一 2px，视觉重量平衡一致</li>
+      <li>选中/激活 → <span style="color:#2196F3">#2196F3</span>，完成 → <span style="color:#4CAF50">#4CAF50</span>，花费 → <span style="color:#FF7043">#FF7043</span>，默认 → #757575</li>
+      <li>FAB 图标白字蓝底（F-01），空状态图标淡灰 #E0E0E0</li>
+      <li>全部 SVG 矢量格式，可在 @2x/@3x 下无损缩放</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

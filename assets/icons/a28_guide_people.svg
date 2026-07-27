@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <!-- A-28 攻略人数 - 人物 -->
+  <circle cx="12" cy="7" r="3" stroke="#757575" stroke-width="1.5" fill="none"/>
+  <path d="M6 20 C6 15 8 13 12 13 C16 13 18 15 18 20" stroke="#757575" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+</svg>

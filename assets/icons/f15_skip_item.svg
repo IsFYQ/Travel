@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <!-- 跳过行程 - 快进 -->
+  <polygon points="8,7 8,17 14,12" stroke="#757575" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+  <polygon points="14,7 14,17 18,12" stroke="#757575" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+</svg>

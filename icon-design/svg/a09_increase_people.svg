@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <!-- A-09 增加人数 - 加号圆 -->
+  <circle cx="12" cy="12" r="8" stroke="#757575" stroke-width="1.5" fill="none"/>
+  <line x1="8" y1="12" x2="16" y2="12" stroke="#757575" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="12" y1="8" x2="12" y2="16" stroke="#757575" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

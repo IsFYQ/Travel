@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <!-- A-16 保存 - 磁盘 -->
+  <path d="M5 4 L16 4 L19 7 L19 20 L5 20 Z" stroke="#757575" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+  <path d="M7 4 L7 11 L13 11 L13 4" stroke="#757575" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+  <rect x="7" y="15" width="10" height="3" rx="0.5" fill="#757575"/>
+</svg>

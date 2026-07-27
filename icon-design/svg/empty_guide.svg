@@ -1,0 +1,21 @@
+<svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- E-03: 暂无攻略 — 简洁版：地图底 + 路径 + 指南针 -->
+  
+  <!-- 地图底板 -->
+  <rect x="10" y="22" width="44" height="38" rx="4" fill="#E8E8E8" stroke="#BDBDBD" stroke-width="2"/>
+  <!-- 虚线路径 -->
+  <path d="M18 34 Q28 28 38 40 Q42 46 50 44" stroke="#BDBDBD" stroke-width="1.5" stroke-dasharray="4 3" fill="none" stroke-linecap="round"/>
+  <!-- 起点标记 -->
+  <circle cx="18" cy="34" r="3" fill="#2196F3" opacity="0.5"/>
+  <!-- 终点（空心，待探索） -->
+  <circle cx="50" cy="44" r="3" stroke="#BDBDBD" stroke-width="1.5" fill="none"/>
+
+  <!-- 指南针 -->
+  <circle cx="54" cy="18" r="12" fill="#E8E8E8" stroke="#BDBDBD" stroke-width="1.5"/>
+  <!-- 指针（简洁十字） -->
+  <line x1="54" y1="9" x2="54" y2="27" stroke="#BDBDBD" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="45" y1="18" x2="63" y2="18" stroke="#BDBDBD" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- 北向三角 -->
+  <path d="M54 10 L57 16 L54 18 L51 16 Z" fill="#2196F3" opacity="0.5"/>
+  <circle cx="54" cy="18" r="2.5" fill="#BDBDBD"/>
+</svg>

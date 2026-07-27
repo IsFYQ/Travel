@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <!-- 拍照 - 相机 -->
+  <rect x="5" y="7" width="14" height="11" rx="2.5" stroke="#757575" stroke-width="1.5" fill="none"/>
+  <path d="M9 7 L11 5 L13 5 L15 7" stroke="#757575" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+  <circle cx="12" cy="13" r="3.5" stroke="#757575" stroke-width="1.5" fill="none"/>
+  <circle cx="12" cy="13" r="1.2" fill="#757575"/>
+</svg>

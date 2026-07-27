@@ -1,0 +1,10 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- N-04: 我的 - 个人（未选中态）Outlined -->
+  <!-- 24dp画板, 20dp安全区域, 线宽1.5px -->
+  <g transform="translate(2, 2)">
+    <!-- 头部（可爱圆头） -->
+    <circle cx="10" cy="6" r="4" stroke="#757575" stroke-width="1.5" fill="none"/>
+    <!-- 身体 -->
+    <path d="M3 18 Q3 12 10 12 Q17 12 17 18" stroke="#757575" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>

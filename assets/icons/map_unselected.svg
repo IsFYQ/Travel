@@ -1,0 +1,19 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- N-02: 攻略 - 地图（未选中态）Outlined -->
+  <!-- 24dp画板, 20dp安全区域, 线宽1.5px -->
+  <g transform="translate(2, 2)">
+    <!-- 折叠地图主体 -->
+    <path d="M2 3 L8 1 L14 3 L18 1 L18 17 L12 19 L6 17 L2 19 Z" stroke="#757575" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+    <!-- 折痕线 -->
+    <line x1="8" y1="1" x2="8" y2="17" stroke="#757575" stroke-width="1" stroke-dasharray="2 2"/>
+    <line x1="14" y1="3" x2="14" y2="17" stroke="#757575" stroke-width="1" stroke-dasharray="2 2"/>
+    <!-- 路径点 -->
+    <circle cx="6" cy="10" r="1.5" stroke="#757575" stroke-width="1" fill="none"/>
+    <circle cx="12" cy="12" r="1.5" stroke="#757575" stroke-width="1" fill="none"/>
+    <!-- 路径线 -->
+    <path d="M6 10 Q9 8 12 12" stroke="#757575" stroke-width="1" fill="none" stroke-linecap="round"/>
+    <!-- 可爱细节：小旗帜 -->
+    <line x1="16" y1="6" x2="16" y2="11" stroke="#757575" stroke-width="1" stroke-linecap="round"/>
+    <path d="M16 6 L19 7.5 L16 9 Z" stroke="#757575" stroke-width="1" fill="none"/>
+  </g>
+</svg>

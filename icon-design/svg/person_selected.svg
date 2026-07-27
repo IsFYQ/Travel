@@ -1,0 +1,9 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- N-04: 我的 - 个人（选中态）Filled -->
+  <g transform="translate(2, 2)">
+    <!-- 头部 -->
+    <circle cx="10" cy="6" r="4" fill="#2196F3"/>
+    <!-- 身体 -->
+    <path d="M3 18 Q3 12 10 12 Q17 12 17 18" fill="#2196F3" stroke="#2196F3" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+</svg>

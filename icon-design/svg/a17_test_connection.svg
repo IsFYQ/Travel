@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <!-- A-17 测试连接 - 播放 -->
+  <circle cx="12" cy="12" r="8" stroke="#757575" stroke-width="1.5" fill="none"/>
+  <polygon points="10,8 10,16 16,12" fill="#757575"/>
+</svg>

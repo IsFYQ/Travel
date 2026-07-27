@@ -1,0 +1,19 @@
+<svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- E-01: 暂无旅行记录 — 简洁版：空白笔记本 + 铅笔 -->
+  
+  <!-- 笔记本封面 -->
+  <rect x="14" y="16" width="44" height="50" rx="6" fill="#E8E8E8" stroke="#BDBDBD" stroke-width="2"/>
+  <!-- 装订线 -->
+  <line x1="14" y1="22" x2="14" y2="64" stroke="#BDBDBD" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- 空白线条（暗示可书写） -->
+  <line x1="22" y1="30" x2="48" y2="30" stroke="#D5D5D5" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="22" y1="38" x2="42" y2="38" stroke="#D5D5D5" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="22" y1="46" x2="46" y2="46" stroke="#D5D5D5" stroke-width="1" stroke-dasharray="5 3" stroke-linecap="round"/>
+
+  <!-- 小铅笔 -->
+  <g transform="translate(52, 52) rotate(-35)">
+    <rect x="0" y="-2.5" width="16" height="5" rx="1.5" fill="#FF7043" opacity="0.7"/>
+    <path d="M16 -2.5 L19 0 L16 2.5 Z" fill="#FF7043" opacity="0.7"/>
+    <rect x="0" y="-2.5" width="3" height="5" rx="0.5" fill="#E8E8E8" opacity="0.7"/>
+  </g>
+</svg>

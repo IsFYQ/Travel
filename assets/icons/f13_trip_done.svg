@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <!-- 行程完成 - 对勾圆 -->
+  <circle cx="12" cy="12" r="8" stroke="#4CAF50" stroke-width="1.5" fill="none"/>
+  <polyline points="8,12 10.5,14.5 16,9" stroke="#4CAF50" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

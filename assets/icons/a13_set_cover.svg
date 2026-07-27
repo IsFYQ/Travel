@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <!-- A-13 设为封面 - 旗帜 -->
+  <line x1="5" y1="4" x2="5" y2="20" stroke="#757575" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M5 4 L17 4 L12 8 L17 12 L5 12" stroke="#757575" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+</svg>
