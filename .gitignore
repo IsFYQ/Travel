@@ -60,3 +60,12 @@ tool/.ima_probe_credentials.json
 tool/ima_probe_output.json
 *.keystore
 *.jks
+
+# 构建产物
+/android/build/
+
+# 个人数据
+/resource_document/
+
+# 内部安全审计文档（含密钥痕迹）
+/todoLIST-opus5.md

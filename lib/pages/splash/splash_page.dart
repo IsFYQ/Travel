@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../app/theme.dart';
+import 'package:ui_design_system/ui_design_system.dart';
 import '../../app/routes.dart';
 
-/// 启动开屏页 — 方案A：清新白底
-/// 最短 1500ms，最长 3000ms，超时自动进入主界面
+/// 启动开屏页 — 最短 1500ms，最长 3000ms
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
 
@@ -12,10 +11,15 @@ class SplashPage extends StatefulWidget {
 }
 
 class _SplashPageState extends State<SplashPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _ctrl;
+  late AnimationController _dotsCtrl;
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
+  bool _navigated = false;
+
+  static const _minDisplay = Duration(milliseconds: 1500);
+  static const _maxDisplay = Duration(milliseconds: 3000);
 
   @override
   void initState() {
@@ -24,6 +28,10 @@ class _SplashPageState extends State<SplashPage>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
+    _dotsCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
     _fadeAnim = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
     );
@@ -33,34 +41,51 @@ class _SplashPageState extends State<SplashPage>
     ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
 
     _ctrl.forward();
+    _scheduleNavigation();
+  }
 
-    // 2 秒后跳转
-    Future.delayed(const Duration(seconds: 2), _goHome);
+  Future<void> _scheduleNavigation() async {
+    // 最短展示 1500ms；最长 3000ms 强制进入
+    await Future.any([
+      Future.delayed(_minDisplay),
+      Future.delayed(_maxDisplay),
+    ]);
+    // 已至少等满 min；若动画未结束再等到动画完成，但不超过 max 总预算
+    final remaining = _maxDisplay - _minDisplay;
+    if (_ctrl.isAnimating) {
+      await Future.any([
+        _ctrl.forward(),
+        Future.delayed(remaining),
+      ]);
+    }
+    _goHome();
   }
 
   void _goHome() {
-    if (!mounted) return;
+    if (!mounted || _navigated) return;
+    _navigated = true;
     Navigator.of(context).pushReplacementNamed(AppRoutes.home);
   }
 
   @override
   void dispose() {
     _ctrl.dispose();
+    _dotsCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFFFFFFF),
-              Color(0xFFF0F8FF),
-            ],
+            colors: isDark
+                ? const [UdsColors.darkBackground, UdsColors.darkSurface]
+                : const [Color(0xFFFFFFFF), Color(0xFFF0F8FF)],
           ),
         ),
         child: Center(
@@ -71,32 +96,26 @@ class _SplashPageState extends State<SplashPage>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Logo 图标
                   _buildLogo(),
-                  const SizedBox(height: 24),
-                  // 品牌名
-                  const Text(
+                  const SizedBox(height: 28),
+                  Text(
                     '旅行搭子',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.textPrimary,
-                      letterSpacing: -0.5,
+                    style: UdsTypography.headlineMedium.copyWith(
+                      color: isDark
+                          ? UdsColors.darkTextPrimary
+                          : UdsColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Slogan
-                  const Text(
-                    'RECORD · EXPLORE · REMEMBER',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
-                      letterSpacing: 1.5,
-                      fontWeight: FontWeight.w500,
+                  Text(
+                    '记录每一段旅程',
+                    style: UdsTypography.bodyMedium.copyWith(
+                      color: isDark
+                          ? UdsColors.darkTextSecondary
+                          : UdsColors.textSecondary,
                     ),
                   ),
-                  const SizedBox(height: 32),
-                  // 加载圆点
+                  const SizedBox(height: 36),
                   _buildDots(),
                 ],
               ),
@@ -107,13 +126,12 @@ class _SplashPageState extends State<SplashPage>
     );
   }
 
-  /// Logo：蓝色渐变圆角方块 + 山/太阳/飞机
   Widget _buildLogo() {
     return Container(
       width: 88,
       height: 88,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(UdsRadii.xl),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -124,13 +142,7 @@ class _SplashPageState extends State<SplashPage>
           ],
           stops: [0.0, 0.55, 1.0],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryColor.withOpacity(0.3),
-            blurRadius: 28,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        boxShadow: UdsElevation.raised,
       ),
       child: CustomPaint(
         painter: _SplashLogoPainter(),
@@ -139,133 +151,65 @@ class _SplashPageState extends State<SplashPage>
     );
   }
 
-  /// 三个加载圆点（脉冲动画）
   Widget _buildDots() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(3, (i) {
-        return TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0.3, end: 1.0),
-          duration: const Duration(milliseconds: 1400),
-          curve: Curves.easeInOut,
-          builder: (context, value, child) {
-            // 交错动画：每个圆点延迟 200ms
-            final t = (DateTime.now().millisecondsSinceEpoch % 1400) / 1400;
-            final phase = (t + i * 0.15) % 1.0;
-            final opacity = 0.3 + 0.7 * (phase < 0.5 ? phase * 2 : 2 - phase * 2);
-            final scale = 0.8 + 0.3 * (phase < 0.5 ? phase * 2 : 2 - phase * 2);
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: 6 * scale,
-              height: 6 * scale,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppTheme.primaryColor.withOpacity(opacity),
+    return AnimatedBuilder(
+      animation: _dotsCtrl,
+      builder: (context, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) {
+            final phase = (_dotsCtrl.value + i * 0.15) % 1.0;
+            final opacity =
+                0.3 + 0.7 * (phase < 0.5 ? phase * 2 : 2 - phase * 2);
+            final scale =
+                0.75 + 0.25 * (phase < 0.5 ? phase * 2 : 2 - phase * 2);
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Opacity(
+                opacity: opacity,
+                child: Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: UdsColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
               ),
             );
-          },
+          }),
         );
-      }),
+      },
     );
   }
 }
 
-/// Logo 内部绘制：山 + 太阳 + 飞机轨迹
 class _SplashLogoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final scaleX = w / 100;
-    final scaleY = h / 100;
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.95)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
 
-    // 高光层（顶部半透明）
-    final highlightPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.center,
-        colors: [
-          Colors.white.withOpacity(0.18),
-          Colors.white.withOpacity(0),
-        ],
-      ).createShader(Rect.fromLTWH(0, 0, w, h * 0.5));
-    canvas.drawRect(Rect.fromLTWH(0, 0, w, h * 0.5), highlightPaint);
+    final cx = size.width / 2;
+    final cy = size.height / 2;
 
-    // 山廓
-    final mountainPath = Path();
-    mountainPath.moveTo(8 * scaleX, 76 * scaleY);
-    mountainPath.cubicTo(
-      8 * scaleX, 76 * scaleY,
-      18 * scaleX, 64 * scaleY,
-      28 * scaleX, 56 * scaleY,
-    );
-    mountainPath.cubicTo(
-      38 * scaleX, 48 * scaleY,
-      44 * scaleX, 60 * scaleY,
-      52 * scaleX, 56 * scaleY,
-    );
-    mountainPath.cubicTo(
-      60 * scaleX, 52 * scaleY,
-      70 * scaleX, 38 * scaleY,
-      80 * scaleX, 50 * scaleY,
-    );
-    mountainPath.cubicTo(
-      86 * scaleX, 58 * scaleY,
-      92 * scaleX, 64 * scaleY,
-      92 * scaleX, 76 * scaleY,
-    );
-    mountainPath.close();
+    // Simple path mark
+    final path = Path()
+      ..moveTo(cx - 18, cy + 8)
+      ..quadraticBezierTo(cx - 4, cy - 18, cx + 6, cy - 4)
+      ..quadraticBezierTo(cx + 14, cy + 6, cx + 18, cy - 10);
+    canvas.drawPath(path, paint);
 
-    final mountainPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(mountainPath, mountainPaint);
-
-    // 太阳
-    final sunPaint = Paint()
+    final fill = Paint()
       ..color = const Color(0xFFFFE082)
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(
-      Offset(74 * scaleX, 32 * scaleY),
-      5 * scaleX,
-      sunPaint,
-    );
-
-    // 飞机轨迹（虚线）
-    final trailPath = Path();
-    trailPath.moveTo(22 * scaleX, 36 * scaleY);
-    trailPath.quadraticBezierTo(
-      44 * scaleX, 22 * scaleY,
-      70 * scaleX, 34 * scaleY,
-    );
-    final trailPaint = Paint()
-      ..color = Colors.white.withOpacity(0.85)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5 * scaleX
-      ..strokeCap = StrokeCap.round;
-    canvas.drawPath(
-      trailPath,
-      trailPaint,
-    );
-
-    // 飞机（简化三角形）
-    canvas.save();
-    canvas.translate(72 * scaleX, 32 * scaleY);
-    canvas.rotate(-30 * 3.14159 / 180);
-    final planePath = Path();
-    planePath.moveTo(-7 * scaleX, 0);
-    planePath.lineTo(7 * scaleX, 0);
-    planePath.lineTo(4 * scaleX, -2 * scaleY);
-    planePath.lineTo(2 * scaleX, -2 * scaleY);
-    planePath.lineTo(0, -4 * scaleY);
-    planePath.lineTo(-2 * scaleX, -2 * scaleY);
-    planePath.lineTo(-4 * scaleX, -2 * scaleY);
-    planePath.close();
-    final planePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(planePath, planePaint);
-    canvas.restore();
+    canvas.drawCircle(Offset(cx + 18, cy - 12), 4, fill);
   }
 
   @override

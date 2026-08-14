@@ -11,15 +11,13 @@ import '../pages/profile/api_settings_page.dart';
 import '../pages/profile/ima_settings_page.dart';
 import '../pages/profile/user_profile_page.dart';
 import '../pages/profile/prompt_settings_page.dart';
+import '../pages/profile/backup_page.dart';
 import 'travel_icons.dart';
-import 'theme.dart';
+import 'package:ui_design_system/ui_design_system.dart';
 
 class AppRoutes {
   static const String splash = '/splash';
   static const String home = '/';
-  static const String records = '/records';
-  static const String chat = '/chat';
-  static const String profile = '/profile';
   static const String diaryEditor = '/diary-editor';
   static const String itineraryList = '/itineraries';
   static const String itineraryDetail = '/itinerary-detail';
@@ -28,11 +26,16 @@ class AppRoutes {
   static const String imaSettings = '/ima-settings';
   static const String userProfile = '/user-profile';
   static const String promptSettings = '/prompt-settings';
+  static const String backup = '/backup';
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
       case splash:
         return MaterialPageRoute(builder: (_) => const SplashPage());
+      case home:
+        return MaterialPageRoute(builder: (_) => const MainShell());
+      case backup:
+        return MaterialPageRoute(builder: (_) => const BackupPage());
       case diaryEditor:
         final args = settings.arguments as Map<String, dynamic>?;
         return MaterialPageRoute(
@@ -55,9 +58,9 @@ class AppRoutes {
           builder: (_) => ItineraryDetailPage(itineraryId: id),
         );
       case itineraryEditor:
-        final id = settings.arguments as String?;
+        // P1-2.6：仅新建攻略，不再接收 itineraryId
         return MaterialPageRoute(
-          builder: (_) => ItineraryEditorPage(itineraryId: id),
+          builder: (_) => const ItineraryEditorPage(),
         );
       case apiSettings:
         return MaterialPageRoute(builder: (_) => const ApiSettingsPage());
@@ -101,7 +104,7 @@ class _MainShellState extends State<MainShell> {
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           border: Border(
-            top: BorderSide(color: AppTheme.borderColor, width: 0.8),
+            top: BorderSide(color: UdsColors.border, width: 0.8),
           ),
         ),
         child: BottomNavigationBar(

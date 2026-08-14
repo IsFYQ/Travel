@@ -7,15 +7,25 @@ class TravelRecord {
   final DateTime? startDate;
   final DateTime? endDate;
   final int people;
-  final String tripType; // 自然风光/历史人文/美食之旅/亲子游/情侣出行/独自旅行/休闲度假/冒险探索
-  final String transportType; // 飞机/高铁/自驾/大巴/轮船/其他 (逗号分隔多选)
-  final List<String> tags; // 自定义标签
-  final String content; // JSON 格式的富文本内容 [{type: 'text', data: '...'}, {type: 'image', path: '...'}]
+  final String tripType;
+  final String transportType;
+  final List<String> tags;
+  final String content;
   final String? coverImagePath;
   final String? summary;
   final double totalCost;
-  final double rating; // 综合评分 1-5
+  final double rating;
+  // P1-3.14：五维评分
+  final double ratingScenery;
+  final double ratingFood;
+  final double ratingStay;
+  final double ratingTransport;
+  final double ratingValue;
   final bool isHidden;
+  // P1-3.5：同步与软删字段
+  final String origin;
+  final String? contentHash;
+  final DateTime? deletedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -33,11 +43,37 @@ class TravelRecord {
     this.summary,
     this.totalCost = 0,
     this.rating = 0,
+    this.ratingScenery = 0,
+    this.ratingFood = 0,
+    this.ratingStay = 0,
+    this.ratingTransport = 0,
+    this.ratingValue = 0,
     this.isHidden = false,
+    this.origin = 'local',
+    this.contentHash,
+    this.deletedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
+
+  /// P1-3.14：五维评分映射
+  Map<String, double> get dimensionRatings => {
+        'scenery': ratingScenery,
+        'food': ratingFood,
+        'stay': ratingStay,
+        'transport': ratingTransport,
+        'value': ratingValue,
+      };
+
+  /// 有效综合分：五维有值时用均值，否则回退 rating
+  double get effectiveRating {
+    final dims = dimensionRatings.values.where((v) => v > 0).toList();
+    if (dims.isNotEmpty) {
+      return dims.reduce((a, b) => a + b) / dims.length;
+    }
+    return rating;
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -54,7 +90,15 @@ class TravelRecord {
       'summary': summary,
       'total_cost': totalCost,
       'rating': rating,
+      'rating_scenery': ratingScenery,
+      'rating_food': ratingFood,
+      'rating_stay': ratingStay,
+      'rating_transport': ratingTransport,
+      'rating_value': ratingValue,
       'is_hidden': isHidden ? 1 : 0,
+      'origin': origin,
+      'content_hash': contentHash,
+      'deleted_at': deletedAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -79,13 +123,22 @@ class TravelRecord {
       summary: map['summary'] as String?,
       totalCost: (map['total_cost'] as num?)?.toDouble() ?? 0,
       rating: (map['rating'] as num?)?.toDouble() ?? 0,
+      ratingScenery: (map['rating_scenery'] as num?)?.toDouble() ?? 0,
+      ratingFood: (map['rating_food'] as num?)?.toDouble() ?? 0,
+      ratingStay: (map['rating_stay'] as num?)?.toDouble() ?? 0,
+      ratingTransport: (map['rating_transport'] as num?)?.toDouble() ?? 0,
+      ratingValue: (map['rating_value'] as num?)?.toDouble() ?? 0,
       isHidden: (map['is_hidden'] as int?) == 1,
+      origin: map['origin'] as String? ?? 'local',
+      contentHash: map['content_hash'] as String?,
+      deletedAt: map['deleted_at'] != null
+          ? DateTime.tryParse(map['deleted_at'] as String)
+          : null,
       createdAt: DateTime.parse(map['created_at']),
       updatedAt: DateTime.parse(map['updated_at']),
     );
   }
 
-  /// 从富文本内容中提取纯文字摘要
   String get textSummary {
     try {
       final items = List<Map<String, dynamic>>.from(jsonDecode(content));
@@ -114,7 +167,16 @@ class TravelRecord {
     String? summary,
     double? totalCost,
     double? rating,
+    double? ratingScenery,
+    double? ratingFood,
+    double? ratingStay,
+    double? ratingTransport,
+    double? ratingValue,
     bool? isHidden,
+    String? origin,
+    String? contentHash,
+    DateTime? deletedAt,
+    bool clearDeletedAt = false,
   }) {
     return TravelRecord(
       id: id,
@@ -130,7 +192,15 @@ class TravelRecord {
       summary: summary ?? this.summary,
       totalCost: totalCost ?? this.totalCost,
       rating: rating ?? this.rating,
+      ratingScenery: ratingScenery ?? this.ratingScenery,
+      ratingFood: ratingFood ?? this.ratingFood,
+      ratingStay: ratingStay ?? this.ratingStay,
+      ratingTransport: ratingTransport ?? this.ratingTransport,
+      ratingValue: ratingValue ?? this.ratingValue,
       isHidden: isHidden ?? this.isHidden,
+      origin: origin ?? this.origin,
+      contentHash: contentHash ?? this.contentHash,
+      deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
       createdAt: createdAt,
       updatedAt: DateTime.now(),
     );

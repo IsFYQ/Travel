@@ -1,27 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:ui_design_system/ui_design_system.dart';
 
-/// P0-15: 弹窗关闭后自动释放 TextEditingController
+/// 兼容层 → [showUdsManagedSheet]
 Future<T?> showManagedModalBottomSheet<T>({
   required BuildContext context,
   required List<TextEditingController> controllers,
   required Widget Function(BuildContext context) builder,
   bool isScrollControlled = false,
   Color? backgroundColor,
-  Color barrierColor = Colors.black54,
+  Color barrierColor = UdsColors.scrim,
   ShapeBorder? shape,
-}) async {
-  try {
-    return await showModalBottomSheet<T>(
-      context: context,
-      isScrollControlled: isScrollControlled,
-      backgroundColor: backgroundColor,
-      barrierColor: barrierColor,
-      shape: shape,
-      builder: builder,
-    );
-  } finally {
-    for (final controller in controllers) {
-      controller.dispose();
-    }
-  }
+}) {
+  return showUdsManagedSheet<T>(
+    context: context,
+    controllers: controllers,
+    builder: builder,
+    isScrollControlled: isScrollControlled,
+    backgroundColor: backgroundColor,
+  );
 }

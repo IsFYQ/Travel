@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_design_system/ui_design_system.dart';
 import '../app/theme.dart';
 
 /// 左滑操作按钮定义
@@ -69,7 +70,7 @@ class SwipeActionCard extends StatefulWidget {
     required this.child,
     required this.actions,
     this.actionWidth = 130,
-    this.borderRadius = 14,
+    this.borderRadius = UdsRadii.card,
     this.onTap,
   });
 

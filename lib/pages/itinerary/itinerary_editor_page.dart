@@ -1,20 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:ui_design_system/ui_design_system.dart';
 import '../../utils/date_format_util.dart';
 import '../../app/theme.dart';
 import '../../models/itinerary.dart';
 import '../../models/itinerary_item.dart';
 import '../../models/travel_record.dart' show kTripTypes;
-import '../../providers/app_provider.dart';
-import '../../services/database_service.dart';
+import '../../providers/itinerary_provider.dart';
 import '../../widgets/disposable_sheet.dart';
 
-/// 新建/编辑攻略页面
+/// P1-2.6：新建攻略专用页（编辑走详情页内编辑模式）
 class ItineraryEditorPage extends StatefulWidget {
-  final String? itineraryId; // 非空时为编辑模式
-
-  const ItineraryEditorPage({super.key, this.itineraryId});
+  const ItineraryEditorPage({super.key});
 
   @override
   State<ItineraryEditorPage> createState() => _ItineraryEditorPageState();
@@ -32,49 +30,6 @@ class _ItineraryEditorPageState extends State<ItineraryEditorPage> {
   String _tripType = '';
   List<DayPlan> _dayPlans = [];
   bool _isLoading = false;
-  bool _pageLoading = false;
-  bool _notFound = false;
-  Itinerary? _existing;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.itineraryId != null) _loadExisting();
-  }
-
-  Future<void> _loadExisting() async {
-    setState(() => _pageLoading = true);
-    final it = await DatabaseService().getItineraryById(widget.itineraryId!);
-    if (!mounted) return;
-    if (it == null) {
-      setState(() {
-        _pageLoading = false;
-        _notFound = true;
-      });
-      return;
-    }
-    setState(() {
-      _existing = it;
-      _destController.text = it.destination;
-      _budgetController.text = it.totalBudget.toStringAsFixed(0);
-      _startDate = it.startDate;
-      _endDate = it.endDate;
-      _people = it.people;
-      _status = it.status;
-      _tripType = it.tripType;
-      // P0-13：直接复用原对象，保留 actualCost / feeling 等执行期字段
-      _dayPlans = it.dayPlans
-          .map((d) => DayPlan(
-                dayNumber: d.dayNumber,
-                date: d.date,
-                items: List<ItineraryItem>.from(d.items),
-                accommodation: d.accommodation,
-                dailyBudget: d.dailyBudget,
-              ))
-          .toList();
-      _pageLoading = false;
-    });
-  }
 
   @override
   void dispose() {
@@ -112,7 +67,14 @@ class _ItineraryEditorPageState extends State<ItineraryEditorPage> {
     });
   }
 
-  void _removeDay(int index) {
+  Future<void> _removeDay(int index) async {
+    final confirmed = await showUdsDeleteConfirmSheet(
+      context: context,
+      title: '删除这一天？',
+      description: '将删除第 ${_dayPlans[index].dayNumber} 天及其全部行程项',
+      confirmText: '删除',
+    );
+    if (confirmed != true || !mounted) return;
     setState(() => _dayPlans.removeAt(index));
   }
 
@@ -263,7 +225,7 @@ class _ItineraryEditorPageState extends State<ItineraryEditorPage> {
 
     try {
       final budget = double.tryParse(_budgetController.text.trim()) ?? 0;
-      final provider = context.read<AppProvider>();
+      final provider = context.read<ItineraryProvider>();
       final beforeCount = _dayPlans.length;
       final cleanedDayPlans = _cleanDayPlans(_dayPlans, _startDate);
       final removedDays = beforeCount - cleanedDayPlans.length;
@@ -274,7 +236,7 @@ class _ItineraryEditorPageState extends State<ItineraryEditorPage> {
               : 1);
 
       final itinerary = Itinerary(
-        id: _existing?.id ?? _uuid.v4(),
+        id: _uuid.v4(),
         destination: dest,
         status: _status,
         startDate: _startDate,
@@ -282,11 +244,8 @@ class _ItineraryEditorPageState extends State<ItineraryEditorPage> {
         days: days,
         totalBudget: budget,
         people: _people,
-        rawContent: _existing?.rawContent ?? '',
         dayPlans: cleanedDayPlans,
-        sourceChatId: _existing?.sourceChatId,
         tripType: _tripType,
-        createdAt: _existing?.createdAt,
       );
 
       await provider.saveItinerary(itinerary);
@@ -312,39 +271,15 @@ class _ItineraryEditorPageState extends State<ItineraryEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_pageLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (_notFound) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('编辑攻略')),
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('攻略不存在'),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('返回'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    final isEdit = widget.itineraryId != null && _existing != null;
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        title: Text(
-          isEdit ? '编辑攻略' : '新建攻略',
-          style: const TextStyle(
+        title: const Text(
+          '新建攻略',
+          style: TextStyle(
             fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.textPrimary,
           ),
         ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_design_system/ui_design_system.dart';
 import '../../app/theme.dart';
 import '../../models/user_profile.dart';
 import '../../services/ai_service.dart';
@@ -17,6 +18,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
   bool _loading = true;
   bool _saving = false;
   bool _dirty = false;
+  String? _nicknameError;
 
   // 基本信息
   late TextEditingController _cityCtrl;
@@ -97,56 +99,65 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
   Future<void> _save() async {
     if (_saving) return;
-    setState(() => _saving = true);
+    FocusManager.instance.primaryFocus?.unfocus();
 
-    final profile = UserProfile(
-      homeCity: _cityCtrl.text.trim(),
-      nickname: _nicknameCtrl.text.trim(),
-      travelStyles: List.from(_travelStyles),
-      foodPrefs: List.from(_foodPrefs),
-      budgetLevel: _budgetLevel,
-      groupSize: _groupSize,
-      companions: List.from(_companions),
-      avoidances: List.from(_avoidances),
-    );
+    final nickname = _nicknameCtrl.text.trim();
+    final city = _cityCtrl.text.trim();
+    if (city.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请填写居住城市')),
+      );
+      return;
+    }
+    if (nickname.isNotEmpty && (nickname.length < 2 || nickname.length > 16)) {
+      setState(() => _nicknameError = '昵称需为 2–16 个字符');
+      return;
+    }
+    setState(() {
+      _nicknameError = null;
+      _saving = true;
+    });
 
-    await _ai.saveUserProfile(profile);
+    try {
+      final profile = UserProfile(
+        homeCity: city,
+        nickname: nickname,
+        travelStyles: List.from(_travelStyles),
+        foodPrefs: List.from(_foodPrefs),
+        budgetLevel: _budgetLevel,
+        groupSize: _groupSize,
+        companions: List.from(_companions),
+        avoidances: List.from(_avoidances),
+      );
 
-    if (mounted) {
-      setState(() {
-        _saving = false;
-        _dirty = false;
-      });
-      _showToast('保存成功');
+      await _ai.saveUserProfile(profile);
+
+      if (!mounted) return;
+      await WidgetsBinding.instance.endOfFrame;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      if (!mounted) return;
       Navigator.pop(context, profile);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('保存失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
-  void _showToast(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 16,
-              height: 16,
-              decoration: const BoxDecoration(
-                color: AppTheme.success,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.check, size: 10, color: Colors.white),
-            ),
-            const SizedBox(width: 6),
-            Text(text),
-          ],
-        ),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xF0111827),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        duration: const Duration(seconds: 1),
-      ),
+  Future<bool> _confirmDiscard() async {
+    final discard = await showUdsConfirmSheet(
+      context: context,
+      title: '放弃修改？',
+      description: '你有未保存的修改，放弃后将无法恢复。',
+      confirmText: '放弃修改',
+      cancelText: '继续编辑',
+      confirmColor: UdsColors.danger,
     );
+    return discard == true;
   }
 
   /// 弹出自定义标签输入框
@@ -163,7 +174,11 @@ class _UserProfilePageState extends State<UserProfilePage> {
       icon: Icons.add,
       confirmText: '添加',
     );
-    tempCtrl.dispose();
+    // BugFix: sheet 关闭动画 + IME 收起可能超过一帧，延后释放 controller
+    Future<void>.delayed(const Duration(milliseconds: 300), () {
+      tempCtrl.dispose();
+    });
+    if (!mounted) return;
     if (result != null && result.isNotEmpty) {
       onAdd(result);
       _markDirty();
@@ -172,11 +187,19 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _buildBody(),
+    return PopScope(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final discard = await _confirmDiscard();
+        if (discard && context.mounted) Navigator.pop(context);
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.backgroundColor,
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _buildBody(),
+      ),
     );
   }
 
@@ -208,12 +231,18 @@ class _UserProfilePageState extends State<UserProfilePage> {
                       label: '昵称',
                       value: _nicknameCtrl.text.isEmpty ? '' : _nicknameCtrl.text,
                       valueAccent: true,
-                      onTap: () => _editTextField(
-                        title: '编辑昵称',
-                        subtitle: '支持中英文、数字，2-16 个字符',
-                        controller: _nicknameCtrl,
-                        hint: '请输入新昵称',
-                      ),
+                      errorText: _nicknameError,
+                      onTap: () async {
+                        await _editTextField(
+                          title: '编辑昵称',
+                          subtitle: '支持中英文、数字，2-16 个字符',
+                          controller: _nicknameCtrl,
+                          hint: '请输入新昵称',
+                        );
+                        if (_nicknameError != null) {
+                          setState(() => _nicknameError = null);
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -345,38 +374,50 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
   Widget _buildTopBar(double top) {
     return Container(
-      color: Colors.white,
+      color: UdsColors.surface,
       padding: EdgeInsets.fromLTRB(16, top + 12, 16, 12),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: AppTheme.borderColor),
-                color: Colors.white,
-              ),
-              child: const Icon(Icons.arrow_back_ios_new, size: 16, color: AppTheme.textSecondary),
-            ),
+          UdsIconButton(
+            icon: Icons.arrow_back_ios_new_rounded,
+            size: 18,
+            tooltip: '返回',
+            onPressed: () async {
+              if (!_dirty) {
+                Navigator.pop(context);
+                return;
+              }
+              final discard = await _confirmDiscard();
+              if (discard && mounted) Navigator.pop(context);
+            },
           ),
           const Expanded(
             child: Text(
               '个人信息',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
+              ),
             ),
           ),
-          GestureDetector(
-            onTap: _saving ? null : _save,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-              child: _saving
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('保存', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.primaryColor)),
-            ),
+          TextButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text(
+                    '保存',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.primaryColor,
+                    ),
+                  ),
           ),
         ],
       ),
@@ -411,22 +452,51 @@ class _UserProfilePageState extends State<UserProfilePage> {
     );
   }
 
-  Widget _buildRowItem({required String label, required String value, bool valueAccent = false, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        child: Row(children: [
-          Text(label, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-          const Spacer(),
-          if (value.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Text(value, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: valueAccent ? AppTheme.primaryColor : AppTheme.textPrimary)),
-            ),
-          const Icon(Icons.chevron_right, size: 18, color: AppTheme.textTertiary),
-        ]),
+  Widget _buildRowItem({
+    required String label,
+    required String value,
+    bool valueAccent = false,
+    String? errorText,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 13, color: AppTheme.textSecondary)),
+                const Spacer(),
+                if (value.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Text(value,
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                            color: valueAccent
+                                ? AppTheme.primaryColor
+                                : AppTheme.textPrimary)),
+                  ),
+                const Icon(Icons.chevron_right,
+                    size: 18, color: AppTheme.textTertiary),
+              ]),
+              if (errorText != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  errorText,
+                  style: const TextStyle(fontSize: 12, color: UdsColors.danger),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -505,7 +575,11 @@ class _UserProfilePageState extends State<UserProfilePage> {
       icon: Icons.person_outline,
       confirmText: '保存',
     );
-    tempCtrl.dispose();
+    // BugFix: sheet 关闭动画 + IME 收起可能超过一帧，延后释放 controller
+    Future<void>.delayed(const Duration(milliseconds: 300), () {
+      tempCtrl.dispose();
+    });
+    if (!mounted) return;
     if (result != null) {
       controller.text = result;
       _markDirty();

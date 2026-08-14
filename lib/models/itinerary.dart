@@ -182,7 +182,9 @@ class DayPlan {
     return DayPlan(
       dayNumber: map['day_number'] as int,
       date: map['date'] != null ? DateTime.parse(map['date']) : null,
-      items: itemsJson.map((i) => ItineraryItem.fromMap(i)).toList(),
+      items: sortItineraryItems(itemsJson.asMap().entries
+          .map((e) => ItineraryItem.fromMap(e.value, fallbackIndex: e.key))
+          .toList()),
       accommodation: acc,
       dailyBudget: (map['daily_budget'] as num?)?.toDouble() ?? 0,
     );

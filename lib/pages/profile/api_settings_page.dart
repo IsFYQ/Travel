@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_design_system/ui_design_system.dart';
 import '../../app/travel_icons.dart';
 import '../../services/ai_service.dart';
 import '../../exceptions/missing_credential_exception.dart';
@@ -17,7 +18,7 @@ class _ApiSettingsPageState extends State<ApiSettingsPage> {
   final _keyController = TextEditingController();
   bool _obscure = true;
   bool _testing = false;
-  String? _testResult;
+  AiTestResult? _testResult;
 
   @override
   void initState() {
@@ -27,11 +28,13 @@ class _ApiSettingsPageState extends State<ApiSettingsPage> {
 
   Future<void> _loadKey() async {
     final key = await _ai.getApiKey();
-    // P0-5：无已存 Key 时保持输入框为空，不做回填
     if (key != null && key.isNotEmpty && mounted) {
       _keyController.text = key;
     }
   }
+
+  bool _isValidKeyFormat(String key) =>
+      key.startsWith('sk-') && key.length >= 20;
 
   Future<void> _saveKey() async {
     final messenger = ScaffoldMessenger.of(context);
@@ -42,6 +45,17 @@ class _ApiSettingsPageState extends State<ApiSettingsPage> {
       );
       return;
     }
+    if (!_isValidKeyFormat(key)) {
+      final force = await showUdsConfirmSheet(
+        context: context,
+        title: '格式异常',
+        description: 'Key 通常以 sk- 开头，是否仍要保存？',
+        confirmText: '仍要保存',
+        cancelText: '取消',
+        confirmColor: UdsColors.warning,
+      );
+      if (force != true) return;
+    }
 
     await _ai.setApiKey(key);
     if (!mounted) return;
@@ -51,7 +65,6 @@ class _ApiSettingsPageState extends State<ApiSettingsPage> {
   }
 
   Future<void> _testKey() async {
-    final messenger = ScaffoldMessenger.of(context);
     final key = _keyController.text.trim();
     if (key.isEmpty) return;
 
@@ -60,32 +73,26 @@ class _ApiSettingsPageState extends State<ApiSettingsPage> {
       _testResult = null;
     });
 
-    await _ai.setApiKey(key);
-
     try {
-      final result = await _ai.sendMessage(
-        userMessage: '你好，请用一句话介绍自己',
-        history: [],
-        maxTokens: 50,
-      );
+      // P1-2.11：测试时不写入 storage
+      final result = await _ai.testApiKey(key);
       if (!mounted) return;
       setState(() {
         _testing = false;
-        _testResult = result.contains('错误') || result.contains('网络')
-            ? '❌ 连接失败: $result'
-            : '✅ 连接成功: $result';
+        _testResult = result;
       });
     } on MissingCredentialException catch (e) {
       if (!mounted) return;
       setState(() {
         _testing = false;
-        _testResult = '❌ ${e.message}';
+        _testResult = AiTestResult(success: false, errorType: AiTestErrorType.unknown);
       });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _testing = false;
-        _testResult = '❌ 连接失败: $e';
+        _testResult = const AiTestResult(success: false, errorType: AiTestErrorType.unknown);
       });
     }
   }
@@ -99,153 +106,105 @@ class _ApiSettingsPageState extends State<ApiSettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('API 设置')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // DeepSeek API Key
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+      backgroundColor: UdsColors.background,
+      appBar: const UdsSettingsAppBar(title: 'API 设置'),
+      body: UdsContentConstrained(
+        child: ListView(
+          padding: const EdgeInsets.all(UdsSpacing.pagePadding),
+          children: [
+            UdsCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       TravelIcons.apiKey(size: 20, color: AppTheme.primaryColor),
-                      SizedBox(width: 8),
-                      Text(
-                        'DeepSeek API Key',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      const SizedBox(width: UdsSpacing.sm),
+                      Text('DeepSeek API Key', style: UdsTypography.titleMedium),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
+                  const SizedBox(height: UdsSpacing.sm),
+                  Text(
                     '从 platform.deepseek.com 获取 API Key',
-                    style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    style: UdsTypography.labelSmall,
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
+                  const SizedBox(height: UdsSpacing.lg),
+                  UdsTextField(
                     controller: _keyController,
                     obscureText: _obscure,
-                    decoration: InputDecoration(
-                      hintText: 'sk-...',
-                      labelText: 'API Key',
-                      suffixIcon: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: TravelIcons.eyeToggle(size: 20, visible: _obscure),
-                            onPressed: () =>
-                                setState(() => _obscure = !_obscure),
-                          ),
-                        ],
-                      ),
+                    hintText: 'sk-...',
+                    label: 'API Key',
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                      child: Text(_obscure ? '显示' : '隐藏'),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: UdsSpacing.sm),
                   Row(
                     children: [
                       Expanded(
-                        child: OutlinedButton.icon(
-                          icon: TravelIcons.save(size: 18),
-                          label: const Text('保存'),
+                        child: UdsButton(
+                          label: '保存',
+                          icon: Icons.save_outlined,
+                          variant: UdsButtonVariant.outlined,
                           onPressed: _saveKey,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: UdsSpacing.md),
                       Expanded(
-                        child: ElevatedButton.icon(
-                          icon: _testing
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
-                                )
-                              : TravelIcons.testConnection(size: 18),
-                          label: Text(_testing ? '测试中...' : '测试连接'),
+                        child: UdsButton(
+                          label: _testing ? '测试中...' : '测试连接',
+                          icon: Icons.wifi_tethering,
+                          loading: _testing,
                           onPressed: _testing ? null : _testKey,
                         ),
                       ),
                     ],
                   ),
                   if (_testResult != null) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: _testResult!.startsWith('✅')
-                            ? Colors.green.withOpacity(0.1)
-                            : Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        _testResult!,
-                        style: const TextStyle(fontSize: 13),
-                      ),
+                    const SizedBox(height: UdsSpacing.md),
+                    UdsStatusBanner(
+                      message: _testResult!.message,
+                      tone: _testResult!.success
+                          ? UdsStatusTone.success
+                          : UdsStatusTone.danger,
                     ),
                   ],
                 ],
               ),
             ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // 使用说明
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+            const SizedBox(height: UdsSpacing.xxl),
+            UdsCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '使用说明',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                  Text('使用说明', style: UdsTypography.titleMedium),
+                  const SizedBox(height: UdsSpacing.md),
                   _tipItem('1. 访问 platform.deepseek.com 注册账号'),
                   _tipItem('2. 在 API Keys 页面创建新的 Key'),
                   _tipItem('3. 复制 Key 粘贴到上方输入框'),
-                  _tipItem('4. 点击"测试连接"确认 Key 有效'),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '💡 API Key 仅存储在你的设备本地，不会上传到任何服务器',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
+                  _tipItem('4. 点击"测试连接"确认 Key 有效（不会自动保存）'),
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _tipItem(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: UdsSpacing.sm),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TravelIcons.connectionOk(size: 16, color: AppTheme.accentMint),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(text, style: const TextStyle(fontSize: 13)),
-          ),
+          const SizedBox(width: UdsSpacing.sm),
+          Expanded(child: Text(text, style: UdsTypography.bodyMedium)),
         ],
       ),
     );

@@ -6,11 +6,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import '../../providers/app_provider.dart';
+import '../../providers/records_provider.dart';
 import '../../models/travel_record.dart';
 import '../../services/database_service.dart';
 import '../../services/media_service.dart';
 import '../../app/theme.dart';
+import '../../widgets/star_rating.dart';
+import 'package:ui_design_system/ui_design_system.dart';
 
 /// 日记编辑器 - 支持图文混排 + 选择式标签
 class DiaryEditorPage extends StatefulWidget {
@@ -56,7 +58,14 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
   final Set<String> _tripTypes = {};
   final Set<String> _transportTypes = {};
   double _totalCost = 0;
+  late TextEditingController _costController;
   double _rating = 0;
+  double _ratingScenery = 0;
+  double _ratingFood = 0;
+  double _ratingStay = 0;
+  double _ratingTransport = 0;
+  double _ratingValue = 0;
+  bool _ratingManualOverride = false;
   String? _coverImagePath;
   String _documentsPath = '';
 
@@ -67,6 +76,11 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
   bool _saving = false;
   bool _loading = true;
   bool _notFound = false;
+  bool _dirty = false;
+
+  void _markDirty() {
+    if (!_dirty && !_loading) setState(() => _dirty = true);
+  }
 
   @override
   void initState() {
@@ -100,6 +114,17 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
           .addAll(record.transportType.split(',').where((s) => s.isNotEmpty));
       _totalCost = record.totalCost;
       _rating = record.rating;
+      _ratingScenery = record.ratingScenery;
+      _ratingFood = record.ratingFood;
+      _ratingStay = record.ratingStay;
+      _ratingTransport = record.ratingTransport;
+      _ratingValue = record.ratingValue;
+      _ratingManualOverride = record.rating > 0 &&
+          record.ratingScenery == 0 &&
+          record.ratingFood == 0 &&
+          record.ratingStay == 0 &&
+          record.ratingTransport == 0 &&
+          record.ratingValue == 0;
       _coverImagePath = record.coverImagePath;
       try {
         _contentBlocks =
@@ -133,6 +158,11 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
 
     if (_contentBlocks.isEmpty) _addTextBlock('');
     _destController = TextEditingController(text: _destination);
+    _costController = TextEditingController(
+      text: _totalCost > 0 ? _totalCost.toStringAsFixed(0) : '',
+    );
+    _destController.addListener(_markDirty);
+    _costController.addListener(_markDirty);
     _initControllers();
     if (mounted) setState(() => _loading = false);
   }
@@ -140,8 +170,9 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
   void _initControllers() {
     for (int i = 0; i < _contentBlocks.length; i++) {
       if (_contentBlocks[i]['type'] == 'text') {
-        _textControllers[i] =
-            TextEditingController(text: _contentBlocks[i]['data'] as String?);
+        final c = TextEditingController(text: _contentBlocks[i]['data'] as String?);
+        c.addListener(_markDirty);
+        _textControllers[i] = c;
       }
     }
   }
@@ -149,7 +180,9 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
   void _addTextBlock(String text) {
     final index = _contentBlocks.length;
     _contentBlocks.add({'type': 'text', 'data': text});
-    _textControllers[index] = TextEditingController(text: text);
+    final c = TextEditingController(text: text);
+    c.addListener(_markDirty);
+    _textControllers[index] = c;
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -221,10 +254,16 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
             : summaryText,
         totalCost: _totalCost,
         rating: _rating,
+        ratingScenery: _ratingScenery,
+        ratingFood: _ratingFood,
+        ratingStay: _ratingStay,
+        ratingTransport: _ratingTransport,
+        ratingValue: _ratingValue,
       );
 
-      await context.read<AppProvider>().saveRecord(record);
+      await context.read<RecordsProvider>().saveRecord(record);
       if (mounted) {
+        _dirty = false;
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('日记已保存！')));
         Navigator.pop(context);
@@ -244,6 +283,7 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
   void dispose() {
     if (!_loading && !_notFound) {
       _destController.dispose();
+      _costController.dispose();
     }
     for (final controller in _textControllers.values) {
       controller.dispose();
@@ -278,14 +318,32 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
       );
     }
 
-    return Scaffold(
+    return PopScope(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final discard = await showUdsConfirmSheet(
+          context: context,
+          title: '放弃修改？',
+          description: '你有未保存的修改，离开后将丢失。',
+          confirmText: '放弃修改',
+          cancelText: '继续编辑',
+          confirmColor: UdsColors.danger,
+        );
+        if (discard == true && context.mounted) {
+          _dirty = false;
+          Navigator.pop(context);
+        }
+      },
+      child: Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       // 自定义头部
       body: Column(
         children: [
           _buildHeader(context),
           Expanded(
-            child: ListView(
+            child: UdsContentConstrained(
+              child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 _buildFormGroup(
@@ -349,14 +407,8 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
                           horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
                         color: AppTheme.primaryColor,
-                        borderRadius: BorderRadius.circular(26),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppTheme.primaryColor.withOpacity(0.35),
-                            blurRadius: 20,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
+                        borderRadius: BorderRadius.circular(UdsRadii.fab),
+                        boxShadow: UdsElevation.raised,
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -377,9 +429,11 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
                 const SizedBox(height: 32),
               ],
             ),
+            ),
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -389,23 +443,29 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
       padding: EdgeInsets.fromLTRB(16, top + 10, 16, 10),
       child: Row(
         children: [
-          // 返回按钮
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                border:
-                    Border.all(color: AppTheme.borderColor, width: 0.8),
-              ),
-              child: const Center(
-                child:
-                    Icon(Icons.arrow_back_ios, size: 18, color: AppTheme.textPrimary),
-              ),
-            ),
+          UdsIconButton(
+            icon: Icons.arrow_back_ios_new_rounded,
+            size: 18,
+            tooltip: '返回',
+            backgroundColor: UdsColors.surface,
+            onPressed: () async {
+              if (!_dirty) {
+                Navigator.pop(context);
+                return;
+              }
+              final discard = await showUdsConfirmSheet(
+                context: context,
+                title: '放弃修改？',
+                description: '你有未保存的修改，离开后将丢失。',
+                confirmText: '放弃修改',
+                cancelText: '继续编辑',
+                confirmColor: UdsColors.danger,
+              );
+              if (discard == true && mounted) {
+                _dirty = false;
+                Navigator.pop(context);
+              }
+            },
           ),
           const Expanded(
             child: Text(
@@ -743,32 +803,51 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
           ),
           if (_showOptionalFields) ...[
             const SizedBox(height: 12),
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppTheme.inputBgColor,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Text('总花费',
-                      style: TextStyle(
-                          fontSize: 14, color: AppTheme.textSecondary)),
-                  const Spacer(),
-                  Text(
-                    _totalCost > 0
-                        ? _totalCost.toStringAsFixed(0)
-                        : '0',
-                    style: const TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
+            UdsTextField(
+              label: '总花费',
+              optionalHint: '可选',
+              hintText: '0',
+              prefixText: '¥ ',
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              controller: _costController,
+              onChanged: (v) {
+                final parsed = double.tryParse(v.trim());
+                setState(() => _totalCost = parsed ?? 0);
+              },
             ),
+            const SizedBox(height: 12),
+            // P1-3.14：五维分项评分
+            _buildDimensionRatingRow('风景', _ratingScenery, (v) {
+              setState(() {
+                _ratingScenery = v;
+                if (!_ratingManualOverride) _rating = _computeDimensionAverage();
+              });
+            }),
+            _buildDimensionRatingRow('美食', _ratingFood, (v) {
+              setState(() {
+                _ratingFood = v;
+                if (!_ratingManualOverride) _rating = _computeDimensionAverage();
+              });
+            }),
+            _buildDimensionRatingRow('住宿', _ratingStay, (v) {
+              setState(() {
+                _ratingStay = v;
+                if (!_ratingManualOverride) _rating = _computeDimensionAverage();
+              });
+            }),
+            _buildDimensionRatingRow('交通', _ratingTransport, (v) {
+              setState(() {
+                _ratingTransport = v;
+                if (!_ratingManualOverride) _rating = _computeDimensionAverage();
+              });
+            }),
+            _buildDimensionRatingRow('性价比', _ratingValue, (v) {
+              setState(() {
+                _ratingValue = v;
+                if (!_ratingManualOverride) _rating = _computeDimensionAverage();
+              });
+            }),
             const SizedBox(height: 12),
             Container(
               padding:
@@ -783,24 +862,52 @@ class _DiaryEditorPageState extends State<DiaryEditorPage> {
                       style: TextStyle(
                           fontSize: 14, color: AppTheme.textSecondary)),
                   const Spacer(),
-                  ...List.generate(5, (i) {
-                    return GestureDetector(
-                      onTap: () =>
-                          setState(() => _rating = (i + 1).toDouble()),
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 4),
-                        child: Icon(
-                          i < _rating ? Icons.star : Icons.star_border,
-                          color: Colors.amber,
-                          size: 22,
-                        ),
-                      ),
-                    );
-                  }),
+                  StarRating(
+                    rating: _rating,
+                    size: 22,
+                    onChanged: (v) => setState(() {
+                      _rating = v;
+                      _ratingManualOverride = v > 0;
+                    }),
+                  ),
                 ],
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// 五维均值自动更新综合分；无分项时保留手动综合分
+  double _computeDimensionAverage() {
+    final dims = [
+      _ratingScenery,
+      _ratingFood,
+      _ratingStay,
+      _ratingTransport,
+      _ratingValue,
+    ].where((v) => v > 0).toList();
+    if (dims.isEmpty) return _rating;
+    return dims.reduce((a, b) => a + b) / dims.length;
+  }
+
+  Widget _buildDimensionRatingRow(
+    String label,
+    double value,
+    ValueChanged<double> onChanged,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 56,
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 13, color: AppTheme.textSecondary)),
+          ),
+          StarRating(rating: value, size: 20, onChanged: onChanged),
         ],
       ),
     );

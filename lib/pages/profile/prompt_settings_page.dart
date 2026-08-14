@@ -218,41 +218,67 @@ class _PromptEditorPageState extends State<_PromptEditorPage> {
   bool _loading = true;
   bool _saving = false;
   bool _dirty = false;
+  String _originalContent = '';
 
   @override
   void initState() {
     super.initState();
     _loadContent();
-    _controller.addListener(() {
-      if (!_dirty) setState(() => _dirty = true);
-    });
+  }
+
+  void _onChanged() {
+    final isDirty = _controller.text != _originalContent;
+    if (isDirty != _dirty) setState(() => _dirty = isDirty);
   }
 
   @override
   void dispose() {
+    _controller.removeListener(_onChanged);
     _controller.dispose();
     super.dispose();
   }
 
   Future<void> _loadContent() async {
-    // 优先读自定义版本，无则读 assets 默认
     final custom = await _ai.loadPromptWithOverride(widget.info.filename);
     if (mounted) {
+      _controller.removeListener(_onChanged);
       setState(() {
         _controller.text = custom;
+        _originalContent = custom;
+        _dirty = false;
         _loading = false;
       });
+      _controller.addListener(_onChanged);
     }
   }
 
   Future<void> _save() async {
-    setState(() => _saving = true);
-    await _ai.saveCustomPrompt(widget.info.filename, _controller.text);
-    if (mounted) {
-      setState(() { _saving = false; _dirty = false; });
+    if (_controller.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('「${widget.info.name}」已保存')),
+        const SnackBar(content: Text('提示词内容不能为空')),
       );
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await _ai.saveCustomPrompt(widget.info.filename, _controller.text);
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _originalContent = _controller.text;
+          _dirty = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('「${widget.info.name}」已保存')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('保存失败：$e')),
+        );
+      }
     }
   }
 
@@ -279,10 +305,13 @@ class _PromptEditorPageState extends State<_PromptEditorPage> {
     final defaultContent =
         await rootBundle.loadString('assets/prompts/${widget.info.filename}');
     if (mounted) {
+      _controller.removeListener(_onChanged);
       setState(() {
         _controller.text = defaultContent;
+        _originalContent = defaultContent;
         _dirty = false;
       });
+      _controller.addListener(_onChanged);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('「${widget.info.name}」已恢复默认')),
       );

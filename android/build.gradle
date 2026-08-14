@@ -13,21 +13,26 @@ subprojects {
 subprojects {
     project.evaluationDependsOn(":app")
 
-    // 为所有子项目统一 Java 和 Kotlin 编译目标
-    project.plugins.withId("com.android.library") {
-        project.android {
-            compileOptions {
-                sourceCompatibility JavaVersion.VERSION_17
-                targetCompatibility JavaVersion.VERSION_17
+    // 为所有子项目（含 Flutter 插件）统一 Java 和 Kotlin 编译目标
+    def configureJvm = {
+        if (project.hasProperty('android')) {
+            project.android {
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_17
+                    targetCompatibility JavaVersion.VERSION_17
+                }
             }
         }
-    }
-    project.plugins.withId("org.jetbrains.kotlin.android") {
         project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
             kotlinOptions {
                 jvmTarget = "17"
             }
         }
+    }
+    if (project.state.executed) {
+        configureJvm()
+    } else {
+        project.afterEvaluate configureJvm
     }
 }
 

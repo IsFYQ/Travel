@@ -2,13 +2,15 @@
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:http/http.dart' as http;
 import '../models/chat_message.dart';
 import '../models/user_profile.dart';
 import '../models/itinerary.dart';
 import '../models/itinerary_item.dart';
 import '../models/accommodation_info.dart';
 import '../exceptions/missing_credential_exception.dart';
+import '../core/network/api_client.dart';
+import '../core/network/api_exception.dart';
+import 'prompt_builder.dart';
 
 /// DeepSeek API 服务
 class AiService {
@@ -60,8 +62,8 @@ class AiService {
     await _storage.write(key: _homeCityKey, value: profile.homeCity);
   }
 
-  /// 从 UserProfile 模型构建用户画像 prompt 文本
-  String buildUserProfileFromModel({
+  /// P1-3.11：从 UserProfile 模型渲染画像 prompt 文本
+  String renderProfilePrompt({
     required UserProfile profile,
     List<String> visitedPlaces = const [],
     double avgBudget = 0,
@@ -178,75 +180,49 @@ class AiService {
     final followUpInstruction =
         await _loadPrompt('followup_suggestions.txt');
 
-    final buffer = StringBuffer();
-    buffer.writeln(systemPrompt);
-
-    // Layer 2: 用户画像
-    if (userProfile != null && userProfile.isNotEmpty) {
-      buffer.writeln('\n$userProfile');
-    }
-
-    // Layer 3: RAG 上下文
-    if (ragContext != null && ragContext.isNotEmpty) {
-      buffer.writeln('\n$ragContext');
-    }
-
-    // Layer 4: 任务指令
-    if (taskInstruction != null && taskInstruction.isNotEmpty) {
-      buffer.writeln('\n$taskInstruction');
-    }
-
-    // 追加追问建议指令
-    buffer.writeln('\n$followUpInstruction');
-
-    return buffer.toString();
+    return PromptBuilder.assemble(
+      systemPersona: systemPrompt,
+      profileText: userProfile,
+      ragContext: ragContext,
+      taskInstruction: taskInstruction,
+      followUpInstruction: followUpInstruction,
+    );
   }
 
-  /// 构建用户画像文本
-  String buildUserProfile({
-    required List<String> visitedPlaces,
-    required List<String> preferredTags,
-    String homeCity = '',
-    double avgBudget = 0,
-    int usualPeople = 1,
-    List<String> likes = const [],
-    List<String> dislikes = const [],
-    String lastTrip = '',
-    int totalTrips = 0,
-    int totalDays = 0,
-  }) {
-    final buffer = StringBuffer('【用户旅行档案】\n');
-    if (homeCity.isNotEmpty) {
-      buffer.writeln('- 居住城市（出发地）：$homeCity');
+  /// P1-2.11：API Key 连接测试（不写入 storage）
+  Future<AiTestResult> testApiKey(String key) async {
+    if (key.trim().isEmpty) {
+      throw MissingCredentialException('DeepSeek', '请输入 API Key');
     }
-    if (visitedPlaces.isNotEmpty) {
-      buffer.writeln('- 去过的地方：${visitedPlaces.join('、')}');
+    try {
+      final json = await ApiClient().postJson(
+        uri: Uri.parse('$_baseUrl$_chatEndpoint'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${key.trim()}',
+        },
+        body: {
+          'model': 'deepseek-chat',
+          'messages': [
+            {'role': 'user', 'content': 'hi'},
+          ],
+          'max_tokens': 5,
+        },
+        retryOnFailure: false,
+      );
+      final model = json['model'] as String? ?? 'deepseek-chat';
+      return AiTestResult(success: true, model: model);
+    } on UnauthorizedException {
+      return const AiTestResult(success: false, errorType: AiTestErrorType.invalidKey);
+    } on InsufficientBalanceException {
+      return const AiTestResult(success: false, errorType: AiTestErrorType.insufficientBalance);
+    } on RateLimitException {
+      return const AiTestResult(success: false, errorType: AiTestErrorType.rateLimit);
+    } on TimeoutApiException {
+      return const AiTestResult(success: false, errorType: AiTestErrorType.timeout);
+    } on NetworkException {
+      return const AiTestResult(success: false, errorType: AiTestErrorType.network);
     }
-    if (preferredTags.isNotEmpty) {
-      buffer.writeln('- 偏好标签：${preferredTags.join('、')}');
-    }
-    if (avgBudget > 0) {
-      buffer.writeln('- 平均单次预算：${avgBudget.toStringAsFixed(0)}元');
-    }
-    if (usualPeople > 0) {
-      buffer.writeln('- 常见出行人数：$usualPeople人');
-    }
-    if (totalTrips > 0) {
-      buffer.writeln('- 累计旅行次数：$totalTrips次');
-    }
-    if (totalDays > 0) {
-      buffer.writeln('- 累计旅行天数：$totalDays天');
-    }
-    if (likes.isNotEmpty) {
-      buffer.writeln('- 喜欢的：${likes.join('、')}');
-    }
-    if (dislikes.isNotEmpty) {
-      buffer.writeln('- 不喜欢的：${dislikes.join('、')}');
-    }
-    if (lastTrip.isNotEmpty) {
-      buffer.writeln('- 上次旅行：$lastTrip');
-    }
-    return buffer.toString();
   }
 
   /// 构建消息列表，P0-10：防止 history 末条与 userMessage 重复
@@ -307,44 +283,37 @@ class AiService {
     };
 
     try {
-      final request = http.Request(
-        'POST',
-        Uri.parse('$_baseUrl$_chatEndpoint'),
+      final response = await ApiClient().postStream(
+        uri: Uri.parse('$_baseUrl$_chatEndpoint'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: requestBody,
       );
-      request.headers['Content-Type'] = 'application/json';
-      request.headers['Authorization'] = 'Bearer $apiKey';
-      request.body = jsonEncode(requestBody);
-
-      final response = await http.Client().send(request);
 
       if (response.statusCode != 200) {
-        final errorBody = await response.stream.bytesToString();
-        yield 'API 请求失败 (${response.statusCode}): $errorBody';
-        return;
+        throw ServerException(response.statusCode, 'API 请求失败 (${response.statusCode})');
       }
 
-      // 解析 SSE 流
       await for (final chunk in response.stream
           .transform(utf8.decoder)
           .transform(const LineSplitter())) {
         if (chunk.startsWith('data: ')) {
           final data = chunk.substring(6).trim();
           if (data == '[DONE]') break;
-
           try {
             final json = jsonDecode(data);
             final delta = json['choices']?[0]?['delta'];
             final content = delta?['content'] as String?;
-            if (content != null) {
-              yield content;
-            }
-          } catch (_) {
-            // 跳过无法解析的行
-          }
+            if (content != null) yield content;
+          } catch (_) {}
         }
       }
+    } on ApiException {
+      rethrow;
     } catch (e) {
-      yield '网络错误: $e';
+      throw NetworkException(e.toString());
     }
   }
 
@@ -376,30 +345,26 @@ class AiService {
     );
 
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl$_chatEndpoint'),
+      final json = await ApiClient().postJson(
+        uri: Uri.parse('$_baseUrl$_chatEndpoint'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $apiKey',
         },
-        body: jsonEncode({
+        body: {
           'model': 'deepseek-chat',
           'messages': messages,
           'temperature': temperature,
           'max_tokens': maxTokens,
           'stream': false,
-        }),
+        },
       );
-
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        return json['choices']?[0]?['message']?['content'] as String? ??
-            'AI 未返回有效回复';
-      } else {
-        return 'API 请求失败 (${response.statusCode})';
-      }
+      return json['choices']?[0]?['message']?['content'] as String? ??
+          'AI 未返回有效回复';
+    } on ApiException {
+      rethrow;
     } catch (e) {
-      return '网络错误: $e';
+      throw NetworkException(e.toString());
     }
   }
 
@@ -747,6 +712,35 @@ class AiService {
     return AccommodationInfo(type: type, name: name, cost: cost);
   }
 
+}
+
+/// P1-2.11：API 测试结果
+enum AiTestErrorType { invalidKey, insufficientBalance, rateLimit, timeout, network, unknown }
+
+class AiTestResult {
+  final bool success;
+  final String? model;
+  final AiTestErrorType? errorType;
+
+  const AiTestResult({required this.success, this.model, this.errorType});
+
+  String get message {
+    if (success) return '连接成功（$model）';
+    switch (errorType) {
+      case AiTestErrorType.invalidKey:
+        return 'API 密钥无效或已过期';
+      case AiTestErrorType.insufficientBalance:
+        return '账户余额不足';
+      case AiTestErrorType.rateLimit:
+        return '请求过于频繁，请稍后再试';
+      case AiTestErrorType.timeout:
+        return '连接超时，请检查网络';
+      case AiTestErrorType.network:
+        return '网络连接失败';
+      default:
+        return '连接失败';
+    }
+  }
 }
 
 /// List 扩展用于取最近 N 条

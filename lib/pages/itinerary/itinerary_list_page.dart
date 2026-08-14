@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/app_provider.dart';
+import 'package:ui_design_system/ui_design_system.dart';
+import '../../providers/itinerary_provider.dart';
 import '../../models/itinerary.dart';
 import '../../models/itinerary_item.dart';
 import '../../app/theme.dart';
@@ -10,7 +11,7 @@ import '../../widgets/swipe_action_card.dart';
 import '../../widgets/confirm_bottom_sheet.dart';
 import '../../utils/date_format_util.dart';
 
-/// 攻略列表页 - 参考设计稿
+/// 攻略列表页
 class ItineraryListPage extends StatefulWidget {
   const ItineraryListPage({super.key});
 
@@ -24,57 +25,96 @@ class _ItineraryListPageState extends State<ItineraryListPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: UdsColors.background,
       body: Column(
         children: [
-          _buildHeader(),
+          const UdsPageHeader(
+            title: '攻略',
+            align: UdsPageHeaderAlign.center,
+          ),
           Expanded(
-            child: Consumer<AppProvider>(
+            child: Consumer<ItineraryProvider>(
               builder: (context, provider, _) {
+                if (provider.loading && provider.itineraries.isEmpty) {
+                  return const UdsLoading(message: '加载攻略中...');
+                }
+
                 final itineraries = provider.itineraries;
-                
+
                 if (itineraries.isEmpty) {
                   return _buildEmptyState();
                 }
 
-                // 按状态分组
-                final ongoing = itineraries.where((i) => i.status == ItineraryStatus.ongoing).toList();
-                final planning = itineraries.where((i) => i.status == ItineraryStatus.planning).toList();
-                final completed = itineraries.where((i) => i.status == ItineraryStatus.completed).toList();
+                final ongoing = itineraries
+                    .where((i) => i.status == ItineraryStatus.ongoing)
+                    .toList();
+                final planning = itineraries
+                    .where((i) => i.status == ItineraryStatus.planning)
+                    .toList();
+                final completed = itineraries
+                    .where((i) => i.status == ItineraryStatus.completed)
+                    .toList();
 
-                // 应用筛选
-                final filteredOngoing = _statusFilter == null || _statusFilter == ItineraryStatus.ongoing ? ongoing : <Itinerary>[];
-                final filteredPlanning = _statusFilter == null || _statusFilter == ItineraryStatus.planning ? planning : <Itinerary>[];
-                final filteredCompleted = _statusFilter == null || _statusFilter == ItineraryStatus.completed ? completed : <Itinerary>[];
+                final filteredOngoing =
+                    _statusFilter == null ||
+                            _statusFilter == ItineraryStatus.ongoing
+                        ? ongoing
+                        : <Itinerary>[];
+                final filteredPlanning =
+                    _statusFilter == null ||
+                            _statusFilter == ItineraryStatus.planning
+                        ? planning
+                        : <Itinerary>[];
+                final filteredCompleted =
+                    _statusFilter == null ||
+                            _statusFilter == ItineraryStatus.completed
+                        ? completed
+                        : <Itinerary>[];
 
-                return NotificationListener<ScrollNotification>(
-                  onNotification: (_) {
-                    SwipeActionCard.closeAll();
-                    return false;
-                  },
-                  child: ListView(
-                    padding: const EdgeInsets.only(bottom: 100),
-                    children: [
-                      // 统计横幅
-                      _buildStatsBanner(itineraries),
-                      // 状态筛选标签
-                      _buildFilterTabs(itineraries),
-                      // 进行中
-                      if (filteredOngoing.isNotEmpty) ...[
-                        _buildSectionHeader('进行中', '${filteredOngoing.length} 个攻略', AppTheme.accentMint),
-                        ...filteredOngoing.map((i) => _buildGuideCard(context, i)),
+                final hasFilteredResults = filteredOngoing.isNotEmpty ||
+                    filteredPlanning.isNotEmpty ||
+                    filteredCompleted.isNotEmpty;
+
+                return RefreshIndicator(
+                  onRefresh: () =>
+                      context.read<ItineraryProvider>().loadItineraries(),
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: (_) {
+                      SwipeActionCard.closeAll();
+                      return false;
+                    },
+                    child: ListView(
+                      padding: const EdgeInsets.only(bottom: 100),
+                      children: [
+                        _buildStatsBanner(itineraries),
+                        if (!hasFilteredResults)
+                          _buildFilterEmptyState()
+                        else ...[
+                          if (filteredOngoing.isNotEmpty) ...[
+                            _buildSectionHeader('进行中',
+                                '${filteredOngoing.length} 个攻略', UdsColors.success),
+                            ...filteredOngoing
+                                .map((i) => _buildGuideCard(context, i)),
+                          ],
+                          if (filteredPlanning.isNotEmpty) ...[
+                            _buildSectionHeader(
+                                '规划中',
+                                '${filteredPlanning.length} 个攻略',
+                                UdsColors.primary),
+                            ...filteredPlanning
+                                .map((i) => _buildGuideCard(context, i)),
+                          ],
+                          if (filteredCompleted.isNotEmpty) ...[
+                            _buildSectionHeader(
+                                '已完成',
+                                '${filteredCompleted.length} 个攻略',
+                                UdsColors.textTertiary),
+                            ...filteredCompleted
+                                .map((i) => _buildGuideCard(context, i)),
+                          ],
+                        ],
                       ],
-                      // 规划中
-                      if (filteredPlanning.isNotEmpty) ...[
-                        _buildSectionHeader('规划中', '${filteredPlanning.length} 个攻略', AppTheme.primaryColor),
-                        ...filteredPlanning.map((i) => _buildGuideCard(context, i)),
-                      ],
-                      // 已完成
-                      if (filteredCompleted.isNotEmpty) ...[
-                        _buildSectionHeader('已完成', '${filteredCompleted.length} 个攻略', AppTheme.textTertiary),
-                        ...filteredCompleted.map((i) => _buildGuideCard(context, i)),
-                      ],
-                    ],
+                    ),
                   ),
                 );
               },
@@ -84,28 +124,6 @@ class _ItineraryListPageState extends State<ItineraryListPage> {
       ),
       floatingActionButton: _buildFab(),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-    );
-  }
-
-  Widget _buildHeader() {
-    final top = MediaQuery.of(context).padding.top;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(16, top + 18, 16, 8),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text(
-              '攻略',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.textPrimary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -120,11 +138,15 @@ class _ItineraryListPageState extends State<ItineraryListPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF2196F3), Color(0xFF42A5F5), Color(0xFF64B5F6)],
+          colors: [
+            UdsColors.primary,
+            UdsColors.primaryLight,
+            UdsColors.primaryLighter,
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(UdsRadii.xl),
       ),
       child: Row(
         children: [
@@ -139,49 +161,76 @@ class _ItineraryListPageState extends State<ItineraryListPage> {
 
   Widget _buildStatItem(String number, String label, bool isActive) {
     return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            if (label == '全部') {
-              _statusFilter = null;
-            } else if (label == '规划中') {
-              _statusFilter = _statusFilter == ItineraryStatus.planning ? null : ItineraryStatus.planning;
-            } else if (label == '进行中') {
-              _statusFilter = _statusFilter == ItineraryStatus.ongoing ? null : ItineraryStatus.ongoing;
-            } else if (label == '已完成') {
-              _statusFilter = _statusFilter == ItineraryStatus.completed ? null : ItineraryStatus.completed;
-            }
-          });
-        },
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          decoration: BoxDecoration(
-            color: isActive ? Colors.white : Colors.white.withOpacity(0.18),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            children: [
-              Text(
-                number,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: isActive ? AppTheme.primaryColor : Colors.white,
-                  height: 1.2,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              if (label == '全部') {
+                _statusFilter = null;
+              } else if (label == '规划中') {
+                _statusFilter = _statusFilter == ItineraryStatus.planning ? null : ItineraryStatus.planning;
+              } else if (label == '进行中') {
+                _statusFilter = _statusFilter == ItineraryStatus.ongoing ? null : ItineraryStatus.ongoing;
+              } else if (label == '已完成') {
+                _statusFilter = _statusFilter == ItineraryStatus.completed ? null : ItineraryStatus.completed;
+              }
+            });
+          },
+          borderRadius: BorderRadius.circular(UdsRadii.md),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            decoration: BoxDecoration(
+              color: isActive ? Colors.white : Colors.white.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(UdsRadii.md),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  number,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: isActive ? UdsColors.primary : Colors.white,
+                    height: 1.2,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: isActive ? AppTheme.primaryColor.withOpacity(0.8) : Colors.white.withOpacity(0.85),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isActive
+                        ? UdsColors.primary.withOpacity(0.8)
+                        : Colors.white.withOpacity(0.85),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildFilterEmptyState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 32),
+      child: Column(
+        children: [
+          TravelIcons.emptyTravel(size: 64),
+          const SizedBox(height: 16),
+          const Text(
+            '当前筛选下没有攻略',
+            style: TextStyle(fontSize: 16, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton(
+            onPressed: () => setState(() => _statusFilter = null),
+            child: const Text('清除筛选'),
+          ),
+        ],
       ),
     );
   }
@@ -541,7 +590,7 @@ class _ItineraryListPageState extends State<ItineraryListPage> {
     );
     if (confirmed != true) return;
     if (!context.mounted) return;
-    await context.read<AppProvider>().deleteItinerary(itinerary.id);
+    await context.read<ItineraryProvider>().deleteItinerary(itinerary.id);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('「${itinerary.destination}」攻略已删除')),

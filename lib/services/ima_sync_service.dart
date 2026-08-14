@@ -1,10 +1,12 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:uuid/uuid.dart';
+import '../core/network/api_client.dart';
+import '../core/network/api_exception.dart';
+import '../core/network/error_mapper.dart';
+import '../exceptions/missing_credential_exception.dart';
 import '../models/travel_record.dart';
 import '../services/database_service.dart';
-import '../exceptions/missing_credential_exception.dart';
-import 'package:uuid/uuid.dart';
 
 /// IMA 知识库同步服务
 class ImaSyncService {
@@ -17,6 +19,8 @@ class ImaSyncService {
   static const String _clientIdKey = 'ima_client_id';
   static const String _apiKeyKey = 'ima_api_key';
   static const String _knowledgeBaseIdKey = 'ima_knowledge_base_id';
+  /// 官方 Skill 客户端必带；格式须为 skill_version=x.y.z（见 ima_api.cjs）
+  static const String _openapiCtx = 'skill_version=1.1.7';
   static const _uuid = Uuid();
 
   final _db = DatabaseService();
@@ -27,8 +31,9 @@ class ImaSyncService {
     required String clientId,
     required String apiKey,
   }) async {
-    await _storage.write(key: _clientIdKey, value: clientId);
-    await _storage.write(key: _apiKeyKey, value: apiKey);
+    // 去除首尾空格，避免复制凭证时带入不可见字符导致鉴权失败
+    await _storage.write(key: _clientIdKey, value: clientId.trim());
+    await _storage.write(key: _apiKeyKey, value: apiKey.trim());
   }
 
   Future<void> saveKnowledgeBaseId(String id) async {
@@ -74,55 +79,95 @@ class ImaSyncService {
     }
   }
 
-  Future<Map<String, String>> _buildHeaders() async {
-    await _ensureApiCredentials();
-    final creds = await getCredentials();
+  Future<Map<String, String>> _buildHeaders({
+    String? clientId,
+    String? apiKey,
+  }) async {
+    final creds = (clientId != null && apiKey != null)
+        ? {'clientId': clientId.trim(), 'apiKey': apiKey.trim()}
+        : await getCredentials();
+    final storedClientId = creds['clientId']?.trim();
+    final storedApiKey = creds['apiKey']?.trim();
+    if (storedClientId == null ||
+        storedClientId.isEmpty ||
+        storedApiKey == null ||
+        storedApiKey.isEmpty) {
+      throw MissingCredentialException('IMA', '请先在 IMA 同步设置中配置 Client ID 与 API Key');
+    }
     return {
       'Content-Type': 'application/json',
-      'ima-openapi-clientid': creds['clientId']!,
-      'ima-openapi-apikey': creds['apiKey']!,
+      'ima-openapi-clientid': storedClientId,
+      'ima-openapi-apikey': storedApiKey,
+      // BugFix: 缺少此 Header 时部分环境会直接鉴权失败
+      'ima-openapi-ctx': _openapiCtx,
     };
+  }
+
+  /// 将 IMA 错误码转为可读提示
+  String _formatApiError(Map<String, dynamic> json) {
+    final code = json['code'];
+    final msg = json['msg']?.toString() ?? '未知错误';
+    // BugFix: 200002 = 凭证无效；官网 API Key 只展示一次，常因只填了 Client ID 或用了旧 Key
+    if (code == 200002 ||
+        code == 20004 ||
+        msg.toLowerCase().contains('auth failed') ||
+        msg.toLowerCase().contains('skill auth')) {
+      return '鉴权失败（$msg）。请确认已同时填写 Client ID 与 API Key'
+          '（API Key 生成后只显示一次；若页面只剩 Client ID，需点「删除」后「重新获取」并立刻复制两者）';
+    }
+    return 'API 返回错误: $msg';
   }
 
   // ========== HTTP 工具 ==========
 
   Future<Map<String, dynamic>> _post(
-      String endpoint, Map<String, dynamic> body) async {
-    final headers = await _buildHeaders();
-    final response = await http.post(
-      Uri.parse('$_baseUrl$endpoint'),
+    String endpoint,
+    Map<String, dynamic> body, {
+    String? clientId,
+    String? apiKey,
+  }) async {
+    final headers = await _buildHeaders(clientId: clientId, apiKey: apiKey);
+    // P1-3.1：IMA 鉴权失败时 HTTP 401，业务错误码仍在 JSON body 中
+    return ApiClient().postJsonLenient(
+      uri: Uri.parse('$_baseUrl$endpoint'),
       headers: headers,
-      body: utf8.encode(jsonEncode(body)),
+      body: body,
     );
-    return jsonDecode(utf8.decode(response.bodyBytes))
-        as Map<String, dynamic>;
   }
 
   // ========== 知识库模块 ==========
 
   /// 获取知识库列表（验证连接用）
-  Future<ImaResult<List<ImaKnowledgeBase>>> getKnowledgeBaseList() async {
+  /// [clientId]/[apiKey] 可选：传入输入框中的凭证，避免未保存时读到旧值
+  Future<ImaResult<List<ImaKnowledgeBase>>> getKnowledgeBaseList({
+    String? clientId,
+    String? apiKey,
+  }) async {
     try {
-      await _ensureApiCredentials();
       final json = await _post(
-          '/openapi/wiki/v1/get_addable_knowledge_base_list',
-          {'cursor': '', 'limit': 50});
+        '/openapi/wiki/v1/get_addable_knowledge_base_list',
+        {'cursor': '', 'limit': 50},
+        clientId: clientId,
+        apiKey: apiKey,
+      );
       if (json['code'] == 0) {
         final list =
             json['data']?['addable_knowledge_base_list'] as List?;
         final bases = (list ?? []).map((item) {
           return ImaKnowledgeBase(
-            id: item['id'] as String,
-            name: item['name'] as String,
+            id: item['id']?.toString() ?? '',
+            name: item['name']?.toString() ?? '',
           );
-        }).toList();
+        }).where((kb) => kb.id.isNotEmpty).toList();
         return ImaResult.success(bases);
       }
-      return ImaResult.error('API 返回错误: ${json['msg']}');
+      return ImaResult.error(_formatApiError(json));
     } on MissingCredentialException catch (e) {
       return ImaResult.error(e.toString());
+    } on ApiException catch (e) {
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     } catch (e) {
-      return ImaResult.error('网络错误: $e');
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     }
   }
 
@@ -159,8 +204,10 @@ class ImaSyncService {
       return ImaResult.error('API 返回错误: ${json['msg']}');
     } on MissingCredentialException catch (e) {
       return ImaResult.error(e.toString());
+    } on ApiException catch (e) {
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     } catch (e) {
-      return ImaResult.error('网络错误: $e');
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     }
   }
 
@@ -180,8 +227,10 @@ class ImaSyncService {
       return ImaResult.error('API 返回错误: ${json['msg']}');
     } on MissingCredentialException catch (e) {
       return ImaResult.error(e.toString());
+    } on ApiException catch (e) {
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     } catch (e) {
-      return ImaResult.error('网络错误: $e');
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     }
   }
 
@@ -207,8 +256,10 @@ class ImaSyncService {
       return ImaResult.error('API 返回错误: ${json['msg']}');
     } on MissingCredentialException catch (e) {
       return ImaResult.error(e.toString());
+    } on ApiException catch (e) {
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     } catch (e) {
-      return ImaResult.error('网络错误: $e');
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     }
   }
 
@@ -238,8 +289,10 @@ class ImaSyncService {
       return ImaResult.error('API 返回错误: ${json['msg']}');
     } on MissingCredentialException catch (e) {
       return ImaResult.error(e.toString());
+    } on ApiException catch (e) {
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     } catch (e) {
-      return ImaResult.error('网络错误: $e');
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     }
   }
 
@@ -262,8 +315,10 @@ class ImaSyncService {
       return ImaResult.error('API 返回错误: ${json['msg']}');
     } on MissingCredentialException catch (e) {
       return ImaResult.error(e.toString());
+    } on ApiException catch (e) {
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     } catch (e) {
-      return ImaResult.error('网络错误: $e');
+      return ImaResult.error(ErrorMapper.toUserMessage(e));
     }
   }
 
@@ -465,7 +520,17 @@ class ImaSyncService {
           '💰 总花费：¥${record.totalCost.toStringAsFixed(0)}');
     }
     if (record.rating > 0) {
-      buffer.writeln('⭐ 评分：${record.rating}');
+      buffer.writeln('⭐ 综合评分：${record.rating}');
+    }
+    // P1-3.14：五维分项评分
+    final dims = <String>[];
+    if (record.ratingScenery > 0) dims.add('风景${record.ratingScenery.toInt()}');
+    if (record.ratingFood > 0) dims.add('美食${record.ratingFood.toInt()}');
+    if (record.ratingStay > 0) dims.add('住宿${record.ratingStay.toInt()}');
+    if (record.ratingTransport > 0) dims.add('交通${record.ratingTransport.toInt()}');
+    if (record.ratingValue > 0) dims.add('性价比${record.ratingValue.toInt()}');
+    if (dims.isNotEmpty) {
+      buffer.writeln('📊 分项评分：${dims.join(' ')}');
     }
     if (record.tripType.isNotEmpty) {
       buffer.writeln('🏷️ 类型：${record.tripType}');

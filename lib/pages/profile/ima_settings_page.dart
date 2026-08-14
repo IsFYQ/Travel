@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_design_system/ui_design_system.dart';
 import '../../app/travel_icons.dart';
 import '../../services/ima_sync_service.dart';
 import '../../app/theme.dart';
@@ -58,17 +59,27 @@ class _ImaSettingsPageState extends State<ImaSettingsPage> {
       _clientIdController.text.trim().isNotEmpty &&
       _apiKeyController.text.trim().isNotEmpty;
 
-  /// P0-6：保存凭证
-  Future<void> _saveCredentials() async {
+  /// BugFix: 读取输入框凭证，避免测试/加载时仍使用未保存的旧密钥
+  Map<String, String>? _inputCredentials() {
     final clientId = _clientIdController.text.trim();
     final apiKey = _apiKeyController.text.trim();
-    if (clientId.isEmpty || apiKey.isEmpty) {
+    if (clientId.isEmpty || apiKey.isEmpty) return null;
+    return {'clientId': clientId, 'apiKey': apiKey};
+  }
+
+  /// P0-6：保存凭证
+  Future<void> _saveCredentials() async {
+    final creds = _inputCredentials();
+    if (creds == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请填写 Client ID 和 API Key')),
       );
       return;
     }
-    await _ima.saveCredentials(clientId: clientId, apiKey: apiKey);
+    await _ima.saveCredentials(
+      clientId: creds['clientId']!,
+      apiKey: creds['apiKey']!,
+    );
     final kbId = _kbIdController.text.trim();
     if (kbId.isNotEmpty) {
       await _ima.saveKnowledgeBaseId(kbId);
@@ -83,9 +94,18 @@ class _ImaSettingsPageState extends State<ImaSettingsPage> {
   }
 
   Future<void> _loadKnowledgeBases() async {
-    if (!_hasCredentials) return;
+    final creds = _inputCredentials();
+    if (creds == null) return;
     setState(() => _loadingKbList = true);
-    final result = await _ima.getKnowledgeBaseList();
+    // BugFix: 加载前先持久化输入框凭证，保证请求头与界面一致
+    await _ima.saveCredentials(
+      clientId: creds['clientId']!,
+      apiKey: creds['apiKey']!,
+    );
+    final result = await _ima.getKnowledgeBaseList(
+      clientId: creds['clientId'],
+      apiKey: creds['apiKey'],
+    );
     if (!mounted) return;
     setState(() {
       _loadingKbList = false;
@@ -96,8 +116,15 @@ class _ImaSettingsPageState extends State<ImaSettingsPage> {
   }
 
   Future<void> _testConnection() async {
-    if (!_hasCredentials) {
+    final creds = _inputCredentials();
+    if (creds == null) {
       setState(() => _testResult = '请先配置凭证');
+      return;
+    }
+    // BugFix: 官网常只常显 Client ID，用户容易把同一串填进 API Key
+    if (creds['clientId'] == creds['apiKey']) {
+      setState(() =>
+          _testResult = '❌ Client ID 与 API Key 不能相同。请重新获取并分别填写两项');
       return;
     }
     setState(() {
@@ -105,7 +132,15 @@ class _ImaSettingsPageState extends State<ImaSettingsPage> {
       _testResult = null;
     });
 
-    final result = await _ima.getKnowledgeBaseList();
+    // BugFix: 测试连接时使用当前输入框凭证，并同步写入本地存储
+    await _ima.saveCredentials(
+      clientId: creds['clientId']!,
+      apiKey: creds['apiKey']!,
+    );
+    final result = await _ima.getKnowledgeBaseList(
+      clientId: creds['clientId'],
+      apiKey: creds['apiKey'],
+    );
     if (!mounted) return;
     setState(() {
       _testing = false;
@@ -125,6 +160,15 @@ class _ImaSettingsPageState extends State<ImaSettingsPage> {
       );
       return;
     }
+    final confirmed = await showUdsConfirmSheet(
+      context: context,
+      title: '从 IMA 导入？',
+      description: '将把知识库中的旅行笔记导入到本地。同 ID 内容可能被覆盖。',
+      confirmText: '开始导入',
+      confirmColor: UdsColors.primary,
+    );
+    if (confirmed != true || !mounted) return;
+
     setState(() {
       _syncing = true;
       _syncProgress = '开始同步...';
@@ -155,12 +199,13 @@ class _ImaSettingsPageState extends State<ImaSettingsPage> {
   Widget build(BuildContext context) {
     if (_loadingCreds) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        appBar: UdsSettingsAppBar(title: 'IMA 同步设置'),
+        body: UdsLoading(message: '加载凭证...'),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('IMA 同步设置')),
+      appBar: const UdsSettingsAppBar(title: 'IMA 同步设置'),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -182,8 +227,10 @@ class _ImaSettingsPageState extends State<ImaSettingsPage> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '从 ima.qq.com/agent-interface 获取凭证',
-                    style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    '从 ima.qq.com/agent-interface 获取凭证。\n'
+                    '注意：API Key 生成后只显示一次；若页面只剩 Client ID，'
+                    '请先「删除API Key」再「重新获取」，立刻复制 Client ID 和 API Key 两项。',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.4),
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -198,7 +245,7 @@ class _ImaSettingsPageState extends State<ImaSettingsPage> {
                     controller: _apiKeyController,
                     obscureText: _obscureApiKey,
                     decoration: InputDecoration(
-                      labelText: 'API Key',
+                      labelText: 'API Key（与 Client ID 不同，勿填同一串）',
                       hintText: '输入 API Key',
                       suffixIcon: IconButton(
                         icon: TravelIcons.eyeToggle(
@@ -301,18 +348,17 @@ class _ImaSettingsPageState extends State<ImaSettingsPage> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            _testResult ?? (_testing ? '正在测试连接...' : '点击右侧按钮测试连接'),
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: _testResult?.startsWith('✅') == true
-                                  ? Colors.green
-                                  : _testResult?.startsWith('❌') == true
-                                      ? Colors.red
-                                      : AppTheme.textSecondary,
-                            ),
+                          child: UdsStatusBanner(
+                            message: _testResult ??
+                                (_testing ? '正在测试连接...' : '点击右侧按钮测试连接'),
+                            tone: _testResult?.startsWith('✅') == true
+                                ? UdsStatusTone.success
+                                : _testResult?.startsWith('❌') == true
+                                    ? UdsStatusTone.danger
+                                    : UdsStatusTone.info,
                           ),
                         ),
+                        const SizedBox(width: 8),
                         OutlinedButton.icon(
                           icon: _testing
                               ? const SizedBox(
@@ -376,15 +422,18 @@ class _ImaSettingsPageState extends State<ImaSettingsPage> {
                   ),
                   if (_syncProgress != null) ...[
                     const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 160),
+                      child: SingleChildScrollView(
+                        child: UdsStatusBanner(
+                          message: _syncProgress!,
+                          tone: _syncProgress!.contains('失败')
+                              ? UdsStatusTone.warning
+                              : _syncProgress!.contains('完成')
+                                  ? UdsStatusTone.success
+                                  : UdsStatusTone.info,
+                        ),
                       ),
-                      child: Text(_syncProgress!,
-                          style: const TextStyle(fontSize: 13)),
                     ),
                   ],
                 ],
@@ -406,7 +455,7 @@ class _ImaSettingsPageState extends State<ImaSettingsPage> {
                   const SizedBox(height: 12),
                   _tipItem('每个目的地文件夹下的笔记会同步为一条旅行日记'),
                   _tipItem('导入的内容以纯文本形式保存，可在日记编辑器中补充照片'),
-                  _tipItem('API Key 有效期约 3 个月，过期需到 IMA 官网重新生成'),
+                  _tipItem('API Key 生成后只显示一次；失效时需删除后重新获取并同时更新两项凭证'),
                   _tipItem('同步方向：IMA → 本地（单向导入）'),
                   const SizedBox(height: 8),
                   const Text(

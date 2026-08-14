@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
-import '../../providers/app_provider.dart';
+import 'package:ui_design_system/ui_design_system.dart';
+import '../../providers/chat_provider.dart';
+import '../../providers/profile_provider.dart';
+import '../../providers/itinerary_provider.dart';
 import '../../models/chat_message.dart';
 import '../../models/itinerary.dart';
 import '../../services/ai_service.dart';
@@ -29,6 +32,7 @@ class _ChatPageState extends State<ChatPage> {
   String? _sessionId;
   List<ChatMessage> _messages = [];
   bool _isSending = false;
+  bool _isGenerating = false;
   String? _recommendation;
   bool _showRecommendation = true;
 
@@ -38,38 +42,23 @@ class _ChatPageState extends State<ChatPage> {
     _initSession();
   }
 
+  Timer? _streamThrottle;
+  DateTime? _lastStreamUpdate;
+
   @override
   void dispose() {
+    _streamThrottle?.cancel();
     _scrollController.dispose();
     _inputController.dispose();
     super.dispose();
   }
 
-  /// 构建完整用户画像（含 UserProfile + 旅行记录统计）
-  Future<String> _buildUserProfile() async {
-    final provider = context.read<AppProvider>();
-    final stats = provider.statistics;
-    final records = provider.records;
-
-    final totalCost = (stats['total_cost'] ?? 0.0) as double;
-    final recordCount = (stats['record_count'] ?? 0) as int;
-    final avgBudget = recordCount > 0 ? totalCost / recordCount : 0.0;
-    final lastTrip = records.isNotEmpty ? records.first.destination : '';
-
-    final profile = await _ai.getUserProfile();
-
-    return _ai.buildUserProfileFromModel(
-      profile: profile,
-      visitedPlaces: provider.destinations,
-      avgBudget: avgBudget,
-      totalTrips: recordCount,
-      totalDays: (stats['total_days'] ?? 0) as int,
-      lastTrip: lastTrip,
-    );
-  }
+  /// P1-3.11：从 ProfileProvider 获取画像文本
+  String _userProfileText(BuildContext context) =>
+      context.read<ProfileProvider>().promptText;
 
   Future<void> _initSession() async {
-    final provider = context.read<AppProvider>();
+    final provider = context.read<ChatProvider>();
     final sessions = await provider.getChatSessions();
 
     if (sessions.isNotEmpty) {
@@ -115,7 +104,7 @@ class _ChatPageState extends State<ChatPage> {
     if (!await _ai.hasApiKey()) return;
     try {
       final result = await _ai.recommendDestination(
-        userProfile: await _buildUserProfile(),
+        userProfile: _userProfileText(context),
       );
       final cleaned = _cleanRecommendation(result);
       if (mounted && cleaned.isNotEmpty) {
@@ -126,7 +115,7 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty || _isSending) return;
-    final provider = context.read<AppProvider>();
+    final provider = context.read<ChatProvider>();
 
     if (!await _ai.hasApiKey()) {
       if (!mounted) return;
@@ -183,23 +172,31 @@ class _ChatPageState extends State<ChatPage> {
         history: _messages
             .where((m) => !m.isLoading && m.id != userMsg.id)
             .toList(),
-        userProfile: await _buildUserProfile(),
+        userProfile: _userProfileText(context),
         taskInstruction: taskInstruction,
       );
 
+      var charsSinceUpdate = 0;
       await for (final chunk in stream) {
         fullResponse.write(chunk);
+        charsSinceUpdate += chunk.length;
+        final now = DateTime.now();
+        final shouldUpdate = charsSinceUpdate >= 30 ||
+            _lastStreamUpdate == null ||
+            now.difference(_lastStreamUpdate!) >= const Duration(milliseconds: 80);
+        if (!shouldUpdate || !mounted) continue;
+
+        _lastStreamUpdate = now;
+        charsSinceUpdate = 0;
         final currentContent = fullResponse.toString();
-        if (mounted) {
-          setState(() {
-            final index = _messages.indexWhere((m) => m.id == aiMsgId);
-            if (index >= 0) {
-              _messages[index] =
-                  _messages[index].copyWith(content: currentContent);
-            }
-          });
-          _scrollToBottom();
-        }
+        setState(() {
+          final index = _messages.indexWhere((m) => m.id == aiMsgId);
+          if (index >= 0) {
+            _messages[index] =
+                _messages[index].copyWith(content: currentContent);
+          }
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
       }
 
       final rawContent = fullResponse.toString();
@@ -211,6 +208,7 @@ class _ChatPageState extends State<ChatPage> {
         sessionId: _sessionId!,
         role: 'assistant',
         content: storageContent,
+        displayContent: AiService.cleanContent(storageContent),
         followUpSuggestions: suggestions,
       );
       await provider.saveMessage(aiMsg);
@@ -277,7 +275,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
@@ -292,83 +290,64 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
     return Scaffold(
-      body: Column(
+      body: Stack(
         children: [
-          // 自定义头部
-          Container(
-            padding: EdgeInsets.fromLTRB(16, top + 15, 16, 12),
-            color: AppTheme.backgroundColor,
-            child: Row(
-              children: [
-                // 查看历史对话
-                GestureDetector(
-                  onTap: _showHistoryDialog,
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: AppTheme.inputBgColor,
-                      borderRadius: BorderRadius.circular(10),
+          Column(
+            children: [
+              Container(
+                padding: EdgeInsets.fromLTRB(8, top + 8, 8, 8),
+                color: UdsColors.background,
+                child: Row(
+                  children: [
+                    UdsIconButton(
+                      icon: Icons.history_rounded,
+                      tooltip: '历史对话',
+                      color: UdsColors.textSecondary,
+                      backgroundColor: UdsColors.inputBg,
+                      onPressed: _isGenerating ? null : _showHistoryDialog,
                     ),
-                    child: const Center(
-                      child: Icon(Icons.history, size: 18, color: AppTheme.textSecondary),
+                    UdsIconButton(
+                      icon: Icons.map_outlined,
+                      tooltip: '生成攻略',
+                      color: UdsColors.textSecondary,
+                      backgroundColor: UdsColors.inputBg,
+                      onPressed:
+                          _isGenerating ? null : _generateItineraryFromChat,
                     ),
-                  ),
+                    const Expanded(
+                      child: Text(
+                        'AI对话',
+                        style: UdsTypography.titleLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    UdsIconButton(
+                      icon: Icons.edit_square,
+                      tooltip: '新对话',
+                      color: UdsColors.textSecondary,
+                      backgroundColor: UdsColors.inputBg,
+                      onPressed: _isGenerating ? null : _newSession,
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                // 生成攻略
-                GestureDetector(
-                  onTap: _generateItineraryFromChat,
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: AppTheme.inputBgColor,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Center(
-                      child: TravelIcons.guideToDiary(size: 18, color: AppTheme.textSecondary),
-                    ),
-                  ),
-                ),
-                const Expanded(
-                  child: Text(
-                    'AI对话',
-                    style: TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                GestureDetector(
-                  onTap: _newSession,
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: AppTheme.inputBgColor,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Center(
-                      child: TravelIcons.newChat(
-                          size: 18, color: AppTheme.textSecondary),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+              if (_recommendation != null && _showRecommendation)
+                _buildRecommendationCard(),
+              if (_recommendation != null && !_showRecommendation)
+                _buildShowRecommendationButton(),
+              Expanded(child: _buildMessageList()),
+              _buildInputBar(),
+            ],
           ),
-          // 今日推荐卡片
-          if (_recommendation != null && _showRecommendation)
-            _buildRecommendationCard(),
-          if (_recommendation != null && !_showRecommendation)
-            _buildShowRecommendationButton(),
-          // 消息列表
-          Expanded(child: _buildMessageList()),
-          // 输入框
-          _buildInputBar(),
+          if (_isGenerating)
+            Positioned.fill(
+              child: ColoredBox(
+                color: UdsColors.scrim,
+                child: const Center(
+                  child: UdsLoading(message: '正在生成攻略...'),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -410,20 +389,19 @@ class _ChatPageState extends State<ChatPage> {
                 showModalBottomSheet(
                   context: context,
                   isScrollControlled: true,
-                  backgroundColor: Colors.black54,
-                  builder: (ctx) => Container(
-                    padding: EdgeInsets.fromLTRB(
-                      20,
-                      20,
-                      20,
-                      20 + MediaQuery.of(ctx).padding.bottom,
+                  barrierColor: UdsColors.scrim,
+                  backgroundColor: UdsColors.surface,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(UdsRadii.modal),
                     ),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        topRight: Radius.circular(20),
-                      ),
+                  ),
+                  builder: (ctx) => Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      UdsSpacing.xl,
+                      UdsSpacing.xl,
+                      UdsSpacing.xl,
+                      UdsSpacing.xl + MediaQuery.of(ctx).padding.bottom,
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -431,23 +409,20 @@ class _ChatPageState extends State<ChatPage> {
                       children: [
                         Row(
                           children: [
-                            const Text('✨ ', style: TextStyle(fontSize: 20)),
                             const Expanded(
                               child: Text(
                                 '今日推荐',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
-                                ),
+                                style: UdsTypography.titleLarge,
                               ),
                             ),
-                            GestureDetector(
-                              onTap: () => Navigator.pop(ctx),
-                              child: Icon(Icons.close, size: 24, color: Colors.grey.shade600),
+                            UdsIconButton(
+                              icon: Icons.close_rounded,
+                              tooltip: '关闭',
+                              onPressed: () => Navigator.pop(ctx),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: UdsSpacing.lg),
                         ConstrainedBox(
                           constraints: BoxConstraints(
                             maxHeight: MediaQuery.of(ctx).size.height * 0.55,
@@ -455,11 +430,7 @@ class _ChatPageState extends State<ChatPage> {
                           child: SingleChildScrollView(
                             child: Text(
                               _recommendation!,
-                              style: TextStyle(
-                                fontSize: 15,
-                                height: 1.8,
-                                color: AppTheme.textPrimary,
-                              ),
+                              style: UdsTypography.bodyLarge.copyWith(height: 1.8),
                             ),
                           ),
                         ),
@@ -470,8 +441,10 @@ class _ChatPageState extends State<ChatPage> {
               },
               child: Text(
                 _recommendation!,
-                style: TextStyle(
-                    fontSize: 13, height: 1.5, color: AppTheme.textSecondary),
+                style: UdsTypography.bodyMedium.copyWith(
+                  fontSize: 13,
+                  height: 1.5,
+                ),
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -643,7 +616,7 @@ class _ChatPageState extends State<ChatPage> {
                               ),
                             )
                           : MarkdownBody(
-                              data: AiService.cleanContent(message.content),
+                              data: message.displayText(AiService.cleanContent),
                               styleSheet: MarkdownStyleSheet(
                                 p: const TextStyle(
                                   color: Color(0xFF333333),
@@ -764,7 +737,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _newSession() async {
-    final provider = context.read<AppProvider>();
+    final provider = context.read<ChatProvider>();
     _sessionId = _uuid.v4();
     await provider.saveChatSession(ChatSession(id: _sessionId!));
     setState(() {
@@ -777,11 +750,21 @@ class _ChatPageState extends State<ChatPage> {
 
   /// 从当前对话生成攻略（含冲突检测）
   Future<void> _generateItineraryFromChat() async {
+    if (_isGenerating) return;
     if (_messages.isEmpty) {
       _showSnackBar('当前没有对话内容');
       return;
     }
 
+    setState(() => _isGenerating = true);
+    try {
+      await _generateItineraryFromChatBody();
+    } finally {
+      if (mounted) setState(() => _isGenerating = false);
+    }
+  }
+
+  Future<void> _generateItineraryFromChatBody() async {
     // 从最后一条 assistant 消息中找攻略内容
     ChatMessage? itineraryMsg;
     for (int i = _messages.length - 1; i >= 0; i--) {
@@ -828,127 +811,42 @@ class _ChatPageState extends State<ChatPage> {
     final cleanContent = AiService.cleanContent(itineraryMsg.content);
 
     // 冲突检测
-    final provider = context.read<AppProvider>();
-    await provider.loadItineraries();
-    final existing = provider.itineraries.where(
+    final itineraryProvider = context.read<ItineraryProvider>();
+    await itineraryProvider.loadItineraries();
+    final existing = itineraryProvider.itineraries.where(
       (it) => it.destination == destination,
     ).toList();
 
     if (existing.isNotEmpty && mounted) {
-      // 存在同名攻略，询问用户
-      final shouldOverwrite = await showModalBottomSheet<bool>(
+      final shouldOverwrite = await showUdsConfirmSheet(
         context: context,
-        barrierColor: Colors.black54,
-        isScrollControlled: true,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.radiusModal)),
+        title: '攻略已存在',
+        description: '已存在「$destination」的攻略，覆盖将更新现有攻略；取消后可选择新增。',
+        confirmText: '覆盖攻略',
+        cancelText: '新增不覆盖',
+        confirmColor: UdsColors.primary,
+        icon: Container(
+          width: 56,
+          height: 56,
+          decoration: const BoxDecoration(
+            color: UdsColors.warningSoft,
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.warning_amber_rounded,
+              size: 28, color: UdsColors.warning),
         ),
-        builder: (ctx) {
-          final bottom = MediaQuery.of(ctx).padding.bottom;
-          return Padding(
-            padding: EdgeInsets.only(bottom: bottom),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  margin: const EdgeInsets.only(top: 12),
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppTheme.borderColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: const BoxDecoration(
-                    color: AppTheme.warningSoft,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.warning_amber_rounded, size: 28, color: AppTheme.warning),
-                ),
-                const SizedBox(height: 16),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 24),
-                  child: Text(
-                    '攻略已存在',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Text(
-                    '已存在「$destination」的攻略，请选择操作方式。',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.6),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 48,
-                          child: ElevatedButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: AppTheme.textSecondary,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(AppTheme.radiusBtn),
-                                side: const BorderSide(color: AppTheme.borderColor),
-                              ),
-                            ),
-                            child: const Text('新增不覆盖', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: SizedBox(
-                          height: 48,
-                          child: ElevatedButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primaryColor,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(AppTheme.radiusBtn),
-                              ),
-                            ),
-                            child: const Text('覆盖攻略', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
       );
 
       if (shouldOverwrite == true) {
-        // 覆盖
         final updated = existing.first.copyWith(
           rawContent: cleanContent,
           days: days,
           totalBudget: budget,
           dayPlans: dayPlans.isNotEmpty ? dayPlans : existing.first.dayPlans,
         );
-        await provider.saveItinerary(updated);
+        await itineraryProvider.saveItinerary(updated);
         _showSnackBar('「$destination」攻略已更新！');
       } else if (shouldOverwrite == false) {
-        // 新增
         final newIt = Itinerary(
           id: _uuid.v4(),
           destination: destination,
@@ -958,13 +856,12 @@ class _ChatPageState extends State<ChatPage> {
           dayPlans: dayPlans,
           sourceChatId: _sessionId,
         );
-        await provider.saveItinerary(newIt);
+        await itineraryProvider.saveItinerary(newIt);
         _showSnackBar('「$destination」攻略已新增！');
       } else {
-        return; // 取消
+        return;
       }
     } else {
-      // 无冲突，直接保存
       final newIt = Itinerary(
         id: _uuid.v4(),
         destination: destination,
@@ -974,7 +871,7 @@ class _ChatPageState extends State<ChatPage> {
         dayPlans: dayPlans,
         sourceChatId: _sessionId,
       );
-      await provider.saveItinerary(newIt);
+      await itineraryProvider.saveItinerary(newIt);
       _showSnackBar('「$destination」攻略已保存到我的攻略！');
     }
   }
@@ -995,13 +892,17 @@ class _ChatPageState extends State<ChatPage> {
 
   /// 显示历史对话列表
   Future<void> _showHistoryDialog() async {
-    final provider = context.read<AppProvider>();
+    final provider = context.read<ChatProvider>();
     if (!mounted) return;
 
     await showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
+      backgroundColor: UdsColors.surface,
+      barrierColor: UdsColors.scrim,
       isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(UdsRadii.modal)),
+      ),
       builder: (ctx) => _HistorySessionsSheet(
         provider: provider,
         currentSessionId: _sessionId,
@@ -1015,7 +916,7 @@ class _ChatPageState extends State<ChatPage> {
 
   /// 加载指定会话
   Future<void> _loadSession(String sessionId) async {
-    final provider = context.read<AppProvider>();
+    final provider = context.read<ChatProvider>();
     final messages = await provider.getMessages(sessionId);
     if (!mounted) return;
     setState(() {
@@ -1027,7 +928,7 @@ class _ChatPageState extends State<ChatPage> {
 
   /// 更新会话标题（用用户首条消息的前20字）
   Future<void> _updateSessionTitle(String firstUserMessage) async {
-    final provider = context.read<AppProvider>();
+    final provider = context.read<ChatProvider>();
     final sessions = await provider.getChatSessions();
     final current = sessions.where((s) => s.id == _sessionId).firstOrNull;
     if (current != null && (current.title.isEmpty || current.title == '新对话')) {
@@ -1045,7 +946,7 @@ class _ChatPageState extends State<ChatPage> {
 
   /// 用目的地名称更新会话标题（AI生成攻略后调用）
   Future<void> _updateSessionTitleTo(String destination) async {
-    final provider = context.read<AppProvider>();
+    final provider = context.read<ChatProvider>();
     final sessions = await provider.getChatSessions();
     final current = sessions.where((s) => s.id == _sessionId).firstOrNull;
     if (current != null) {
@@ -1057,21 +958,11 @@ class _ChatPageState extends State<ChatPage> {
       await provider.saveChatSession(updated);
     }
   }
-
-  String _formatSessionTime(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
-    if (diff.inDays < 1) return '${diff.inHours}小时前';
-    if (diff.inDays < 7) return '${diff.inDays}天前';
-    return '${dt.month}月${dt.day}日';
-  }
 }
 
-/// P0-14：历史对话列表，删除后原地刷新而非递归重开弹窗
+/// 历史对话列表，删除后原地刷新而非递归重开弹窗
 class _HistorySessionsSheet extends StatefulWidget {
-  final AppProvider provider;
+  final ChatProvider provider;
   final String? currentSessionId;
   final Future<void> Function(String sessionId) onSelectSession;
 
@@ -1114,8 +1005,8 @@ class _HistorySessionsSheetState extends State<_HistorySessionsSheet> {
       expand: false,
       builder: (_, scrollController) => Container(
         decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          color: UdsColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(UdsRadii.modal)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1163,10 +1054,19 @@ class _HistorySessionsSheetState extends State<_HistorySessionsSheet> {
                               background: Container(
                                 alignment: Alignment.centerRight,
                                 padding: const EdgeInsets.only(right: 20),
-                                color: Colors.red.withOpacity(0.8),
-                                child: const Icon(Icons.delete,
+                                color: UdsColors.danger,
+                                child: const Icon(Icons.delete_outline,
                                     color: Colors.white),
                               ),
+                              confirmDismiss: (_) async {
+                                final ok = await showUdsDeleteConfirmSheet(
+                                  context: context,
+                                  title: '删除对话？',
+                                  description:
+                                      '删除后无法恢复「${s.title.isEmpty ? '新对话' : s.title}」',
+                                );
+                                return ok == true;
+                              },
                               onDismissed: (_) async {
                                 await widget.provider.deleteChatSession(s.id);
                                 await _loadSessions();

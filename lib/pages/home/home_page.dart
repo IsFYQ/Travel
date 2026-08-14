@@ -1,12 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
-import '../../providers/app_provider.dart';
+import 'package:ui_design_system/ui_design_system.dart';
+import '../../providers/records_provider.dart';
+import '../../providers/stats_provider.dart';
 import '../../app/travel_icons.dart';
 import '../../models/travel_record.dart';
 import '../../services/media_service.dart';
-import '../../utils/date_format_util.dart';
 import '../../app/theme.dart';
 import '../../app/routes.dart';
 import '../../widgets/swipe_action_card.dart';
@@ -27,6 +29,7 @@ class _HomePageState extends State<HomePage> {
   bool _hiddenSectionExpanded = false;
   String _documentsPath = '';
   final _media = MediaService();
+  Timer? _searchDebounce; // P1-3.9：搜索防抖 300ms
 
   @override
   void initState() {
@@ -41,6 +44,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -50,11 +54,12 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: () async {
-          await context.read<AppProvider>().loadRecords(
+          await context.read<RecordsProvider>().loadRecords(
                 search: _searchQuery,
                 tag: _selectedTag,
               );
-          await context.read<AppProvider>().loadHiddenRecords();
+          await context.read<RecordsProvider>().loadHiddenRecords();
+          await context.read<StatsProvider>().refresh();
         },
         child: NotificationListener<ScrollNotification>(
           onNotification: (_) {
@@ -117,7 +122,7 @@ class _HomePageState extends State<HomePage> {
 
   /// 统计卡片 - 带装饰圆
   Widget _buildStatsCard(BuildContext context) {
-    final stats = context.watch<AppProvider>().statistics;
+    final stats = context.watch<StatsProvider>().statistics;
     final cityCount = stats['city_count'] ?? 0;
     final recordCount = stats['record_count'] ?? 0;
     final totalCost = (stats['total_cost'] ?? 0.0) as double;
@@ -233,7 +238,7 @@ class _HomePageState extends State<HomePage> {
                     onPressed: () {
                       _searchController.clear();
                       setState(() => _searchQuery = '');
-                      context.read<AppProvider>().loadRecords();
+                      context.read<RecordsProvider>().loadRecords();
                     },
                   )
                 : null,
@@ -242,9 +247,14 @@ class _HomePageState extends State<HomePage> {
           ),
           onChanged: (value) {
             setState(() => _searchQuery = value);
-            context
-                .read<AppProvider>()
-                .loadRecords(search: value, tag: _selectedTag);
+            _searchDebounce?.cancel();
+            _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+              if (!mounted) return;
+              context.read<RecordsProvider>().loadRecords(
+                    search: value,
+                    tag: _selectedTag,
+                  );
+            });
           },
         ),
       ),
@@ -263,7 +273,7 @@ class _HomePageState extends State<HomePage> {
             selected: _selectedTag == null,
             onSelected: (_) {
               setState(() => _selectedTag = null);
-              context.read<AppProvider>().loadRecords(search: _searchQuery);
+              context.read<RecordsProvider>().loadRecords(search: _searchQuery);
             },
           ),
           const SizedBox(width: 8),
@@ -275,7 +285,7 @@ class _HomePageState extends State<HomePage> {
                 selected: _selectedTag == type,
                 onSelected: (selected) {
                   setState(() => _selectedTag = selected ? type : null);
-                  context.read<AppProvider>().loadRecords(
+                  context.read<RecordsProvider>().loadRecords(
                         search: _searchQuery,
                         tag: selected ? type : null,
                       );
@@ -288,34 +298,17 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 筛选标签 - 简洁胶囊样式
+  /// 筛选标签
   Widget _buildFilterChip({
     required String label,
     required bool selected,
     required ValueChanged<bool> onSelected,
   }) {
-    return GestureDetector(
+    return UdsChip(
+      label: label,
+      selected: selected,
+      variant: UdsChipVariant.filter,
       onTap: () => onSelected(!selected),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.primaryColor : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? AppTheme.primaryColor : AppTheme.borderColor,
-            width: 0.8,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.w500 : FontWeight.normal,
-            color: selected ? Colors.white : AppTheme.textSecondary,
-          ),
-        ),
-      ),
     );
   }
 
@@ -329,81 +322,50 @@ class _HomePageState extends State<HomePage> {
 
   /// 时间线列表
   Widget _buildTimeline(BuildContext context) {
-    final records = context.watch<AppProvider>().records;
-    final loading = context.watch<AppProvider>().recordsLoading;
+    final records = context.watch<RecordsProvider>().records;
+    final loading = context.watch<RecordsProvider>().loading;
+    final timelineEntries = context.watch<RecordsProvider>().timelineEntries;
 
     if (loading) {
       return const SliverFillRemaining(
-        child: Center(child: CircularProgressIndicator()),
+        child: UdsLoading(message: '加载旅行记录...'),
       );
     }
 
     if (records.isEmpty) {
+      final hasFilter = _searchQuery.isNotEmpty || _selectedTag != null;
       return SliverFillRemaining(
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TravelIcons.emptyTravel(size: 80),
-              const SizedBox(height: 16),
-              Text(
-                '还没有旅行记录',
-                style: TextStyle(fontSize: 18, color: Colors.grey.shade400),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '点击右下角 + 开始记录你的旅行',
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade400),
-              ),
-            ],
-          ),
+        child: UdsEmptyState(
+          icon: Icons.flight_takeoff_outlined,
+          message: hasFilter ? '没有符合条件的旅行记录' : '还没有旅行记录\n点击右下角 + 开始记录你的旅行',
+          actionLabel: hasFilter ? '清除筛选' : null,
+          onAction: hasFilter
+              ? () {
+                  setState(() {
+                    _searchQuery = '';
+                    _selectedTag = null;
+                    _searchController.clear();
+                  });
+                  context.read<RecordsProvider>().loadRecords();
+                }
+              : null,
         ),
       );
     }
 
-    // 按年月分组
-    final grouped = <String, List<TravelRecord>>{};
-    final sortedRecords = records.toList()
-      ..sort((a, b) {
-        final aDate = a.endDate ?? a.startDate ?? a.createdAt;
-        final bDate = b.endDate ?? b.startDate ?? b.createdAt;
-        return bDate.compareTo(aDate);
-      });
-    for (final record in sortedRecords) {
-      final date = record.endDate ?? record.startDate ?? record.createdAt;
-      final key = DateFormatUtil.yearMonth().format(date);
-      grouped.putIfAbsent(key, () => []).add(record);
-    }
-
+    // P1-3.9：使用 RecordsProvider 预计算的扁平时间线，O(1) 索引
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
-          final keys = grouped.keys.toList();
-          int flatIndex = 0;
-          for (final key in keys) {
-            final items = grouped[key]!;
-            if (flatIndex == index) return _buildMonthHeader(key);
-            flatIndex++;
-            for (int i = 0; i < items.length; i++) {
-              if (flatIndex == index) {
-                return _buildTimelineCard(context, items[i]);
-              }
-              flatIndex++;
-            }
+          final entry = timelineEntries[index];
+          if (entry.type == TimelineEntryType.header) {
+            return _buildMonthHeader(entry.headerLabel!);
           }
-          return null;
+          return _buildTimelineCard(context, entry.record!);
         },
-        childCount: _calculateTotalItems(grouped),
+        childCount: timelineEntries.length,
       ),
     );
-  }
-
-  int _calculateTotalItems(Map<String, List<TravelRecord>> grouped) {
-    int count = 0;
-    for (final items in grouped.values) {
-      count += 1 + items.length;
-    }
-    return count;
   }
 
   /// 月份标题
@@ -444,7 +406,7 @@ class _HomePageState extends State<HomePage> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: SwipeActionCard(
         key: ValueKey(record.id),
-        borderRadius: 14,
+        borderRadius: UdsRadii.card,
         onTap: () => Navigator.pushNamed(
         context,
         AppRoutes.diaryEditor,
@@ -452,7 +414,21 @@ class _HomePageState extends State<HomePage> {
       ),
       actions: [
         SwipeAction.hide(
-          onTap: () => context.read<AppProvider>().hideRecord(record.id),
+          onTap: () async {
+            final provider = context.read<RecordsProvider>();
+            await provider.hideRecord(record.id);
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).clearSnackBars();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('已隐藏「${record.destination}」'),
+                action: SnackBarAction(
+                  label: '撤销',
+                  onPressed: () => provider.unhideRecord(record.id),
+                ),
+              ),
+            );
+          },
         ),
         SwipeAction.delete(
           onTap: () => _showDeleteConfirmDialog(context, record.id),
@@ -461,7 +437,7 @@ class _HomePageState extends State<HomePage> {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(UdsRadii.card),
           border: Border.all(color: AppTheme.borderSoft, width: 0.8),
         ),
         child: Row(
@@ -478,6 +454,7 @@ class _HomePageState extends State<HomePage> {
                         width: 48,
                         height: 48,
                         fit: BoxFit.cover,
+                        cacheWidth: 96, // P1-3.9：@2x 缩略图解码
                         // P0-1：旧路径失效时占位
                         errorBuilder: (_, __, ___) => _buildCoverPlaceholder(gradientColors),
                       ),
@@ -572,7 +549,7 @@ class _HomePageState extends State<HomePage> {
 
   /// 隐藏记录折叠模块
   Widget _buildHiddenRecordsSection(BuildContext context) {
-    final hiddenRecords = context.watch<AppProvider>().hiddenRecords;
+    final hiddenRecords = context.watch<RecordsProvider>().hiddenRecords;
     if (hiddenRecords.isEmpty) {
       return const SliverToBoxAdapter();
     }
@@ -730,7 +707,7 @@ class _HomePageState extends State<HomePage> {
               // 查看按钮
               _buildHiddenActionBtn(
                 icon: Icons.visibility_outlined,
-                onTap: () => context.read<AppProvider>().unhideRecord(record.id),
+                onTap: () => context.read<RecordsProvider>().unhideRecord(record.id),
                 color: AppTheme.textSecondary,
                 bgColor: Colors.white,
                 borderColor: AppTheme.borderColor,
@@ -783,7 +760,7 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (confirmed == true && mounted) {
-      await context.read<AppProvider>().deleteRecordPermanently(recordId);
+      await context.read<RecordsProvider>().deleteRecordPermanently(recordId);
     }
   }
 }

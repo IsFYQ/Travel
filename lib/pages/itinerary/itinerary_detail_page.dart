@@ -1,14 +1,13 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:image_gallery_saver2/image_gallery_saver.dart';
+import 'package:image_gallery_saver2_fixed/image_gallery_saver2_fixed.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
-import '../../providers/app_provider.dart';
+import 'package:ui_design_system/ui_design_system.dart';
+import '../../providers/itinerary_provider.dart';
 import '../../models/itinerary.dart';
 import '../../models/itinerary_item.dart';
-import '../../models/travel_record.dart' show kTripTypes;
 import '../../app/theme.dart';
 import '../../app/routes.dart';
 import '../../services/database_service.dart';
@@ -16,8 +15,17 @@ import '../../services/permission_service.dart';
 import '../../utils/date_format_util.dart';
 import '../../widgets/disposable_sheet.dart';
 import '../../services/ai_service.dart';
+import '../../exceptions/missing_credential_exception.dart';
 import '../../widgets/confirm_bottom_sheet.dart';
 import '../../models/accommodation_info.dart';
+import 'itinerary_detail_view_model.dart';
+import 'widgets/execute_item_tile.dart';
+import 'widgets/itinerary_hero_banner.dart';
+import 'widgets/itinerary_summary_card.dart';
+import 'widgets/itinerary_timeline.dart';
+import 'widgets/itinerary_day_card.dart';
+import 'widgets/itinerary_ui_helpers.dart';
+import 'widgets/rate_sheet.dart';
 /// 攻略详情页 - 编辑视图 + 执行视图
 class ItineraryDetailPage extends StatefulWidget {
   final String itineraryId;
@@ -85,7 +93,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
   /// P0-17：非编辑模式统一持久化
   Future<void> _persist(Itinerary next) async {
     try {
-      await context.read<AppProvider>().saveItinerary(next);
+      await context.read<ItineraryProvider>().saveItinerary(next);
       if (!mounted) return;
       setState(() => _itinerary = next);
     } catch (e) {
@@ -202,7 +210,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
         status: _editingStatus,
         tripType: _editingTripType,
       );
-      await context.read<AppProvider>().saveItinerary(updated);
+      await context.read<ItineraryProvider>().saveItinerary(updated);
       await _loadItinerary();
       if (!mounted) return;
       setState(() => _isEditing = false);
@@ -463,7 +471,21 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
             child: ListView(
               padding: const EdgeInsets.only(bottom: 30),
               children: [
-                _isEditing ? _buildEditableHeroBanner() : _buildHeroBanner(),
+                _isEditing
+                    ? ItineraryEditableHeroBanner(
+                        destController: _destController,
+                        budgetController: _budgetController,
+                        startDate: _editingStartDate,
+                        endDate: _editingEndDate,
+                        people: _editingPeople,
+                        status: _editingStatus,
+                        tripType: _editingTripType,
+                        onPickDateRange: _pickDateRange,
+                        onPeopleChanged: (p) => setState(() => _editingPeople = p),
+                        onStatusChanged: (s) => setState(() => _editingStatus = s),
+                        onTripTypeChanged: (t) => setState(() => _editingTripType = t),
+                      )
+                    : ItineraryHeroBanner(itinerary: _itinerary!),
                 _buildModeSwitch(),
                 // 日卡片
                 ...List.generate(
@@ -476,9 +498,18 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
                 // 添加新的一天
                 _buildAddDayButton(),
                 // 行程总览
-                _buildSummaryCard(),
-                // 操作按钮
-                _buildActionButtons(),
+                ItinerarySummaryCard(
+                  itinerary: _itinerary!,
+                  totalItems: _itinerary!.dayPlans
+                      .fold<int>(0, (sum, d) => sum + d.items.length),
+                ),
+                ItineraryActionButtons(
+                  status: _itinerary!.status,
+                  onEnterExecute: () => setState(() => _isExecuteMode = true),
+                  onConvertToDiary: _convertToDiary,
+                  onShare: _shareItinerary,
+                  onDelete: _confirmDeleteItinerary,
+                ),
               ],
             ),
           ),
@@ -542,254 +573,6 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
             ),
           ),
         ],
-      ),
-    );
-  }
-  Widget _buildHeroBanner() {
-    final it = _itinerary!;
-    final dateRange = _formatDateRange(it.startDate, it.endDate);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 6, 16, 14),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF2196F3), Color(0xFF42A5F5), Color(0xFF64B5F6)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(_getEmojiForDestination(it.destination),
-              style: const TextStyle(fontSize: 34)),
-          const SizedBox(height: 6),
-          Text(
-            it.destination,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              _heroChip('📅 $dateRange'),
-              _heroChip('👥 ${it.people} 人'),
-              if (it.totalBudget > 0)
-                _heroChip('💰 预算 ¥${it.totalBudget.toStringAsFixed(0)}'),
-              if (it.tripType.isNotEmpty)
-                _heroChip('${_getEmojiForTripType(it.tripType)} ${it.tripType}'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-  Widget _buildEditableHeroBanner() {
-    final dateRange = _formatDateRange(_editingStartDate, _editingEndDate);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 6, 16, 14),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3), width: 1.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(_getEmojiForDestination(_destController.text),
-                  style: const TextStyle(fontSize: 34)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _destController,
-                  decoration: const InputDecoration(
-                    labelText: '目的地',
-                    filled: true,
-                    fillColor: AppTheme.inputBgColor,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    isDense: true,
-                  ),
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // 日期
-          GestureDetector(
-            onTap: _pickDateRange,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppTheme.inputBgColor,
-                borderRadius: BorderRadius.circular(AppTheme.radiusInput),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_today, size: 16, color: AppTheme.primaryColor),
-                  const SizedBox(width: 8),
-                  Text(
-                    dateRange == '待定' ? '点击选择日期' : dateRange,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: dateRange == '待定' ? AppTheme.textTertiary : AppTheme.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // 人数 + 预算
-          Row(
-            children: [
-              Expanded(
-                child: _editField(
-                  label: '人数',
-                  child: Row(
-                    children: [
-                      _countBtn(Icons.remove, () {
-                        if (_editingPeople > 1) setState(() => _editingPeople--);
-                      }),
-                      const SizedBox(width: 8),
-                      Text('$_editingPeople 人',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-                      const SizedBox(width: 8),
-                      _countBtn(Icons.add, () {
-                        setState(() => _editingPeople++);
-                      }),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: _budgetController,
-                  decoration: const InputDecoration(
-                    labelText: '总预算（元）',
-                    prefixText: '¥ ',
-                    filled: true,
-                    fillColor: AppTheme.inputBgColor,
-                    isDense: true,
-                  ),
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // 状态
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppTheme.inputBgColor,
-              borderRadius: BorderRadius.circular(AppTheme.radiusInput),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<ItineraryStatus>(
-                value: _editingStatus,
-                isExpanded: true,
-                icon: const Icon(Icons.expand_more, size: 20, color: AppTheme.textSecondary),
-                items: ItineraryStatus.values.map((s) {
-                  return DropdownMenuItem(
-                    value: s,
-                    child: Text(s.label, style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary)),
-                  );
-                }).toList(),
-                onChanged: (v) {
-                  if (v != null) setState(() => _editingStatus = v);
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // 旅行类型
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: kTripTypes.map((type) {
-              final isSelected = _editingTripType == type;
-              return GestureDetector(
-                onTap: () => setState(() => _editingTripType = isSelected ? '' : type),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isSelected ? AppTheme.primaryColor : AppTheme.inputBgColor,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isSelected ? AppTheme.primaryColor : AppTheme.borderColor,
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    '${_getEmojiForTripType(type)} $type',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: isSelected ? Colors.white : AppTheme.textSecondary,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _editField({required String label, required Widget child}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: const TextStyle(fontSize: 12, color: AppTheme.textTertiary)),
-        const SizedBox(height: 6),
-        child,
-      ],
-    );
-  }
-
-  Widget _countBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          color: AppTheme.inputBgColor,
-          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-          border: Border.all(color: AppTheme.borderColor, width: 1),
-        ),
-        child: Icon(icon, size: 14, color: AppTheme.textSecondary),
-      ),
-    );
-  }
-
-  Widget _heroChip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 12, color: Colors.white),
       ),
     );
   }
@@ -861,349 +644,77 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
     );
   }
   Widget _buildDayCard(DayPlan dayPlan, int dayIndex) {
-    final dateStr = dayPlan.date != null
-        ? DateFormatUtil.monthDayDotWeekday().format(dayPlan.date!)
-        : '';
-    final isOngoingDay = _itinerary!.status == ItineraryStatus.ongoing &&
-        dayIndex == _getCurrentDayIndex();
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF3F4F6), width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 日标签
-          Container(
-            padding: const EdgeInsets.only(bottom: 10),
-            decoration: const BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: Color(0xFFF3F4F6),
-                  width: 1,
-                  style: BorderStyle.solid,
-                ),
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF2196F3), Color(0xFF64B5F6)],
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      'D${dayPlan.dayNumber}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _getDayTitle(dayIndex),
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                      if (dateStr.isNotEmpty)
-                        Text(dateStr,
-                            style: const TextStyle(
-                                fontSize: 12, color: AppTheme.textTertiary)),
-                    ],
-                  ),
-                ),
-                if (isOngoingDay)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8F5E9),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text('进行中',
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.accentMint)),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          // 时间线行程项
-          _buildTimeline(dayPlan, dayIndex),
-          // 添加行程项按钮
-          if (!_isBuildingShare) _buildAddItemButton(dayIndex),
-          // 住宿
-          if (dayPlan.accommodation != null) ...[
-            const SizedBox(height: 8),
-            _buildAccommodation(dayPlan.accommodation!, dayIndex),
-          ] else if (_isEditing && !_isBuildingShare) ...[
-            const SizedBox(height: 8),
-            _buildAddAccommodationButton(dayIndex),
-          ],
-          // 日底部统计
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.only(top: 10),
-            decoration: const BoxDecoration(
-              border: Border(
-                top: BorderSide(
-                  color: Color(0xFFF3F4F6),
-                  width: 1,
-                  style: BorderStyle.solid,
-                ),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('共${dayPlan.items.length} 项行程',
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                Text.rich(
-                  TextSpan(
-                    text: '当日预算 ',
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-                    children: [
-                      TextSpan(
-                        text: '¥${_calculateDayBudget(dayPlan).toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.accentCoral,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  Widget _buildTimeline(DayPlan dayPlan, int dayIndex) {
-    return Column(
-      children: dayPlan.items.asMap().entries.map((entry) {
-        final itemIndex = entry.key;
-        final item = entry.value;
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 时间
-              SizedBox(
-                width: 42,
-                child: Text(
-                  item.time,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.primaryColor,
-                  ),
-                ),
-              ),
-              // 内容
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text('${item.emoji} ', style: const TextStyle(fontSize: 16)),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: _isEditing
-                                ? () => _showEditItemSheet(dayIndex, itemIndex, item)
-                                : null,
-                            child: Text(
-                              item.title,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: _isEditing
-                                    ? AppTheme.primaryColor
-                                    : AppTheme.textPrimary,
-                                decoration: _isEditing
-                                    ? TextDecoration.underline
-                                    : null,
-                                decorationColor: AppTheme.primaryColor,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                        if (item.cost > 0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppTheme.backgroundColor,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              '¥${item.cost.toStringAsFixed(0)}',
-                              style: const TextStyle(
-                                  fontSize: 12, color: AppTheme.textSecondary),
-                            ),
-                          ),
-                        // 编辑模式下显示编辑和删除按钮
-                        if (_isEditing) ...[
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            onTap: () => _showEditItemSheet(dayIndex, itemIndex, item),
-                            child: const Icon(Icons.edit_outlined, size: 14, color: AppTheme.primaryColor),
-                          ),
-                          const SizedBox(width: 4),
-                          GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _editingDayPlans[dayIndex].items.removeAt(itemIndex);
-                              });
-                            },
-                            child: const Icon(Icons.close, size: 16, color: AppTheme.textTertiary),
-                          ),
-                        ],
-                      ],
-                    ),
-                    if (item.note != null && item.note!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 3),
-                        child: Text(
-                          item.note!,
-                          style: const TextStyle(
-                              fontSize: 12, color: AppTheme.textTertiary, height: 1.5),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-  Widget _buildAddItemButton(int dayIndex) {
-    return GestureDetector(
-      onTap: _isEditing
+    return ItineraryDayCard(
+      dayPlan: dayPlan,
+      dayIndex: dayIndex,
+      dayTitle: _getDayTitle(dayIndex),
+      isOngoingDay: _itinerary!.status == ItineraryStatus.ongoing &&
+          dayIndex == _getCurrentDayIndex(),
+      isEditing: _isEditing,
+      hideActions: _isBuildingShare,
+      timeline: _buildTimeline(dayPlan, dayIndex),
+      dayBudget: _calculateDayBudget(dayPlan),
+      onAddItem: _isEditing
           ? () => _showAddItemSheet(dayIndex)
           : () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('点击右上角「编辑」后可添加行程项')),
               );
             },
-      child: Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(top: 6),
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(color: AppTheme.borderColor, width: 1),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.add, size: 14, color: AppTheme.textTertiary),
-            const SizedBox(width: 5),
-            Text('添加行程项',
-                style: TextStyle(fontSize: 13, color: AppTheme.textTertiary)),
-          ],
-        ),
-      ),
-    );
-  }
-  Widget _buildAccommodation(AccommodationInfo acc, int dayIndex) {
-    final isEditing = _isEditing;
-    return GestureDetector(
-      onTap: isEditing ? () => _showAccommodationSheet(dayIndex, acc) : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFFFFF7ED), Color(0xFFFFEDD5)],
-          ),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFFED7AA), width: 1),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFB923C),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: const Center(
-                child: Text('🛏️', style: TextStyle(fontSize: 14)),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '住宿· ${acc.displayText}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF9A3412),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (isEditing)
-              const Icon(Icons.edit, size: 16, color: Color(0xFF9A3412)),
-          ],
-        ),
-      ),
+      onEditAccommodation: _isEditing
+          ? (acc) => _showAccommodationSheet(dayIndex, acc)
+          : null,
+      onAddAccommodation: () => _showAccommodationSheet(dayIndex, null),
     );
   }
 
-  Widget _buildAddAccommodationButton(int dayIndex) {
-    return GestureDetector(
-      onTap: () => _showAccommodationSheet(dayIndex, null),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFFFED7AA), width: 1),
-          borderRadius: BorderRadius.circular(12),
-          color: const Color(0xFFFFFBF5),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.add, size: 14, color: Color(0xFFFB923C)),
-            const SizedBox(width: 5),
-            Text('添加住宿',
-                style: TextStyle(fontSize: 13, color: Color(0xFFFB923C))),
-          ],
-        ),
-      ),
+  Widget _buildTimeline(DayPlan dayPlan, int dayIndex) {
+    return ItineraryTimeline(
+      items: dayPlan.items,
+      isEditing: _isEditing,
+      dayIndex: dayIndex,
+      onReorder: _isEditing
+          ? (oldIndex, newIndex) {
+              setState(() {
+                if (newIndex > oldIndex) newIndex -= 1;
+                final list = sortItineraryItems(
+                    List<ItineraryItem>.from(_editingDayPlans[dayIndex].items));
+                final item = list.removeAt(oldIndex);
+                list.insert(newIndex, item);
+                for (var i = 0; i < list.length; i++) {
+                  list[i] = list[i].copyWith(sortOrder: i);
+                }
+                final day = _editingDayPlans[dayIndex];
+                _editingDayPlans[dayIndex] = DayPlan(
+                  dayNumber: day.dayNumber,
+                  date: day.date,
+                  items: list,
+                  accommodation: day.accommodation,
+                  dailyBudget: day.dailyBudget,
+                );
+              });
+            }
+          : null,
+      onEditItem: (itemIndex, item) =>
+          _showEditItemSheet(dayIndex, itemIndex, item),
+      onDeleteItem: (itemId) => _deleteTimelineItem(dayIndex, itemId),
     );
+  }
+
+  void _deleteTimelineItem(int dayIndex, String itemId) {
+    setState(() {
+      final list = sortItineraryItems(
+          List<ItineraryItem>.from(_editingDayPlans[dayIndex].items));
+      list.removeWhere((e) => e.id == itemId);
+      final day = _editingDayPlans[dayIndex];
+      _editingDayPlans[dayIndex] = DayPlan(
+        dayNumber: day.dayNumber,
+        date: day.date,
+        items: list,
+        accommodation: day.accommodation,
+        dailyBudget: day.dailyBudget,
+      );
+    });
   }
 
   void _showAccommodationSheet(int dayIndex, AccommodationInfo? existing) {
@@ -1442,149 +953,6 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
       ),
     );
   }
-  Widget _buildSummaryCard() {
-    final totalItems =
-        _itinerary!.dayPlans.fold<int>(0, (sum, d) => sum + d.items.length);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF3F4F6), width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.calendar_today, size: 16, color: AppTheme.primaryColor),
-              const SizedBox(width: 6),
-              const Text('行程总览',
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _summaryCell(_itinerary!.days.toString(), '总天数'),
-              _summaryCell(totalItems.toString(), '行程项'),
-              _summaryCell(
-                  '¥${_itinerary!.totalBudget.toStringAsFixed(0)}', '总预算'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-  Widget _summaryCell(String number, String label) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        decoration: BoxDecoration(
-          color: AppTheme.backgroundColor,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          children: [
-            Text(number,
-                style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.primaryColor)),
-            const SizedBox(height: 2),
-            Text(label,
-                style:
-                    const TextStyle(fontSize: 11, color: AppTheme.textTertiary)),
-          ],
-        ),
-      ),
-    );
-  }
-  Widget _buildActionButtons() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF3F4F6), width: 1),
-      ),
-      child: Column(
-        children: [
-          _actionButton(
-            svgAsset: 'assets/icons/f10_execution_view.svg',
-            label: '进入执行视图',
-            color: AppTheme.accentMint,
-            onTap: () => setState(() => _isExecuteMode = true),
-          ),
-          const SizedBox(height: 8),
-          _actionButton(
-            svgAsset: 'assets/icons/f12_guide_to_diary.svg',
-            label: '一键转日记',
-            color: AppTheme.primaryColor,
-            onTap: _convertToDiary,
-          ),
-          const SizedBox(height: 8),
-          _actionButton(
-            icon: Icons.share_outlined,
-            label: '分享攻略',
-            color: AppTheme.primaryColor,
-            onTap: _shareItinerary,
-          ),
-          // 规划中的攻略允许删除
-          if (_itinerary!.status == ItineraryStatus.planning) ...[
-            const SizedBox(height: 8),
-            _actionButton(
-              icon: Icons.delete_outline,
-              label: '删除攻略',
-              color: Colors.red,
-              onTap: _confirmDeleteItinerary,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-  Widget _actionButton({
-    IconData? icon,
-    String? svgAsset,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppTheme.borderColor, width: 1),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (svgAsset != null)
-              SvgPicture.asset(svgAsset, width: 16, height: 16,
-                  colorFilter: ColorFilter.mode(color, BlendMode.srcIn))
-            else if (icon != null)
-              Icon(icon, size: 16, color: color),
-            const SizedBox(width: 6),
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary)),
-          ],
-        ),
-      ),
-    );
-  }
   // ========================
   // 执行视图
   // ========================
@@ -1747,12 +1115,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFF3F4F6), width: 1),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2)),
-        ],
+        boxShadow: UdsElevation.soft,
       ),
       child: Column(
         children: [
@@ -1860,212 +1223,14 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
     );
   }
   Widget _buildExecuteItem(ItineraryItem item, int itemIndex) {
-    final isDone = item.status == ItemStatus.completed;
-    final isSkipped = item.status == ItemStatus.skipped;
-    return GestureDetector(
+    return ExecuteItemTile(
+      item: item,
       onTap: () => _showRateSheet(itemIndex),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(13),
-        decoration: BoxDecoration(
-          color: isDone
-              ? const Color(0xFFE8F5E9)
-              : isSkipped
-                  ? const Color(0xFFF9FAFB)
-                  : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isDone
-                ? const Color(0xFFC8E6C9)
-                : const Color(0xFFF3F4F6),
-            width: 1,
-          ),
-        ),
-        child: Opacity(
-          opacity: isSkipped ? 0.5 : 1.0,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 时间
-              SizedBox(
-                width: 42,
-                child: Text(
-                  item.time,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: isDone ? AppTheme.accentMint : AppTheme.textSecondary,
-                  ),
-                ),
-              ),
-              // emoji
-              Container(
-                width: 38,
-                height: 38,
-                margin: const EdgeInsets.only(right: 10),
-                decoration: BoxDecoration(
-                  color: isDone
-                      ? const Color(0xFFC8E6C9)
-                      : AppTheme.backgroundColor,
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: Center(
-                    child:
-                        Text(item.emoji, style: const TextStyle(fontSize: 22))),
-              ),
-              // 内容
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            item.title,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: isSkipped
-                                  ? AppTheme.textTertiary
-                                  : AppTheme.textPrimary,
-                              decoration: isSkipped
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                            ),
-                          ),
-                        ),
-                        if (item.cost > 0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: isDone
-                                  ? const Color(0xFF4CAF50)
-                                      .withOpacity(0.12)
-                                  : AppTheme.backgroundColor,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              '¥${item.cost.toStringAsFixed(0)}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isDone
-                                    ? AppTheme.accentMint
-                                    : AppTheme.textSecondary,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    // 星级
-                    if (item.rating > 0) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: List.generate(5, (i) {
-                          return Text(
-                            i < item.rating ? '★' : '☆',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: i < item.rating
-                                  ? const Color(0xFFFFB300)
-                                  : const Color(0xFFE5E7EB),
-                            ),
-                          );
-                        }),
-                      ),
-                    ],
-                    // 备注
-                    if (item.note != null && item.note!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(6),
-                          border: const Border(
-                            left: BorderSide(
-                                color: Color(0xFFE8F5E9), width: 2),
-                          ),
-                        ),
-                        child: Text(
-                          '📝 ${item.note}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textSecondary,
-                              height: 1.5),
-                        ),
-                      ),
-                    ],
-                    // 感受（用户执行过程中填写的一句话备注）
-                    if (item.feeling != null && item.feeling!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF3E0),
-                          borderRadius: BorderRadius.circular(6),
-                          border: const Border(
-                            left: BorderSide(
-                                color: Color(0xFFFFB74D), width: 2),
-                          ),
-                        ),
-                        child: Text(
-                          '💬 ${item.feeling}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFFE65100),
-                              height: 1.5),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              // 状态圆形按钮
-              GestureDetector(
-                onTap: () => _toggleItemStatus(_currentDay, itemIndex, item.status),
-                child: Container(
-                  width: 24,
-                  height: 24,
-                  margin: const EdgeInsets.only(top: 2, left: 8),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isDone
-                        ? AppTheme.accentMint
-                        : isSkipped
-                            ? const Color(0xFF9CA3AF)
-                            : Colors.white,
-                    border: Border.all(
-                      color: isDone
-                          ? AppTheme.accentMint
-                          : isSkipped
-                              ? const Color(0xFF9CA3AF)
-                              : AppTheme.borderColor,
-                      width: 2,
-                    ),
-                  ),
-                  child: isDone
-                      ? const Icon(Icons.check, size: 14, color: Colors.white)
-                      : isSkipped
-                          ? const Icon(Icons.remove,
-                              size: 14, color: Colors.white)
-                          : null,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      onToggleStatus: () =>
+          _toggleItemStatus(_currentDay, itemIndex, item.status),
     );
   }
+
   Widget _buildFinishDayButton(double bottom) {
     final isLastDay = _currentDay >= _itinerary!.dayPlans.length - 1;
     return Container(
@@ -2085,13 +1250,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
                     colors: [Color(0xFF4CAF50), Color(0xFF66BB6A)],
                   ),
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF4CAF50).withValues(alpha: 0.3),
-                      blurRadius: 14,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+                  boxShadow: UdsElevation.soft,
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -2129,13 +1288,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
                   colors: [Color(0xFF2196F3), Color(0xFF42A5F5)],
                 ),
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF2196F3).withValues(alpha: 0.3),
-                    blurRadius: 14,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                boxShadow: UdsElevation.soft,
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -2326,298 +1479,15 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
   void _showAccommodationRateSheet(int dayIndex) {
     final acc = _itinerary!.dayPlans[dayIndex].accommodation;
     if (acc == null) return;
-    double tempRating = acc.rating;
-    String tempFeeling = acc.feeling ?? '';
-    // 实际花费默认填充预计花费
-    double tempActualCost = acc.actualCost > 0 ? acc.actualCost : acc.cost;
-    final feelingController = TextEditingController(text: tempFeeling);
-    final costController = TextEditingController(
-        text: tempActualCost > 0 ? tempActualCost.toStringAsFixed(0) : '');
-    showManagedModalBottomSheet(
+    showAccommodationRateSheet(
       context: context,
-      controllers: [feelingController, costController],
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final bottomPadding = MediaQuery.of(ctx).viewInsets.bottom;
-            return AnimatedPadding(
-              padding: EdgeInsets.only(bottom: bottomPadding),
-              duration: const Duration(milliseconds: 100),
-              child: GestureDetector(
-                onTap: () => FocusScope.of(ctx).unfocus(),
-                child: Container(
-                  padding: EdgeInsets.fromLTRB(
-                    18, 8, 18, 24 + MediaQuery.of(ctx).padding.bottom),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(20),
-                      topRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // 拖拽条
-                        Container(
-                          width: 36,
-                          height: 4,
-                          margin: const EdgeInsets.only(bottom: 14),
-                          decoration: BoxDecoration(
-                            color: AppTheme.borderColor,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        const Text('住宿快评',
-                            style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
-                                color: AppTheme.textPrimary)),
-                        const SizedBox(height: 14),
-                        // 住宿信息
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFF7ED),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFB923C),
-                                  borderRadius: BorderRadius.circular(9),
-                                ),
-                                child: const Center(
-                                    child: Text('🛖',
-                                        style: TextStyle(fontSize: 20))),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                        acc.name.isNotEmpty ? acc.name : '住宿',
-                                        style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppTheme.textPrimary)),
-                                    if (acc.type.isNotEmpty || acc.area.isNotEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2),
-                                        child: Text(
-                                          [if (acc.type.isNotEmpty) acc.type, if (acc.area.isNotEmpty) acc.area].join(' · '),
-                                          style: const TextStyle(fontSize: 12, color: AppTheme.textTertiary),
-                                        ),
-                                      ),
-                                    if (acc.cost > 0)
-                                      Text('预估 ¥${acc.cost.toStringAsFixed(0)}',
-                                          style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppTheme.textTertiary)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        // 星级评分
-                        Row(
-                          children: [
-                            const Text('⭐ 快速评分',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textSecondary)),
-                            const Spacer(),
-                            if (tempRating > 0)
-                              Text(
-                                '${tempRating.toInt()} 星',
-                                style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFFFFB300)),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(5, (i) {
-                            return GestureDetector(
-                              onTap: () {
-                                setSheetState(
-                                    () => tempRating = i + 1 == tempRating ? 0 : (i + 1).toDouble());
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 10),
-                                child: Text(
-                                  i < tempRating ? '★' : '☆',
-                                  style: TextStyle(
-                                    fontSize: 34,
-                                    color: i < tempRating
-                                        ? const Color(0xFFFFB300)
-                                        : const Color(0xFFE5E7EB),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
-                        ),
-                        const SizedBox(height: 14),
-                        // 实际花费
-                        Row(
-                          children: [
-                            const Text('💰 实际花费',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textSecondary)),
-                            const Spacer(),
-                            Text('预估 ¥${acc.cost.toStringAsFixed(0)}',
-                                style: const TextStyle(
-                                    fontSize: 12, color: AppTheme.textTertiary)),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: costController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: InputDecoration(
-                            prefixText: '¥ ',
-                            prefixStyle: const TextStyle(
-                                fontSize: 15, color: AppTheme.textPrimary),
-                            hintText: '填写实际花费',
-                            filled: true,
-                            fillColor: AppTheme.backgroundColor,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.borderColor),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.borderColor),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.primaryColor),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        // 一句话备注
-                        Row(
-                          children: [
-                            const Text('📝 一句话备注',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textSecondary)),
-                            const SizedBox(width: 4),
-                            Text('可选',
-                                style: TextStyle(
-                                    fontSize: 13, color: AppTheme.textTertiary)),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: feelingController,
-                          maxLength: 50,
-                          decoration: InputDecoration(
-                            hintText: '比如：房间很干净，早餐不错..',
-                            filled: true,
-                            fillColor: AppTheme.backgroundColor,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.borderColor),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.borderColor),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.primaryColor),
-                            ),
-                          ),
-                          maxLines: 2,
-                          minLines: 1,
-                        ),
-                        const SizedBox(height: 14),
-                        // 按钮
-                        Row(
-                          children: [
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () => Navigator.pop(ctx),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.backgroundColor,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Center(
-                                    child: Text('取消',
-                                        style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppTheme.textSecondary)),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () {
-                                  final costText = costController.text.trim();
-                                  final actualCost = costText.isNotEmpty
-                                      ? (double.tryParse(costText) ?? 0)
-                                      : 0.0;
-                                  _saveAccommodationRate(
-                                      dayIndex, tempRating, feelingController.text, actualCost);
-                                  Navigator.pop(ctx);
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFB923C),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Center(
-                                    child: Text('保存评价',
-                                        style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.white)),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
+      accommodation: acc,
+      onSave: (result) => _saveAccommodationRate(
+        dayIndex,
+        result.rating,
+        result.feeling,
+        result.actualCost,
+      ),
     );
   }
 
@@ -2639,9 +1509,10 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
       dailyBudget: dayPlans[dayIndex].dailyBudget,
     );
     final updated = _itinerary!.copyWith(dayPlans: dayPlans);
-    setState(() => _itinerary = updated);
-    await context.read<AppProvider>().saveItinerary(updated);
+    // BugFix: 先持久化再 setState，避免 sheet 关闭期间触发父组件重建
+    await context.read<ItineraryProvider>().saveItinerary(updated);
     if (!mounted) return;
+    setState(() => _itinerary = updated);
   }
 
   // ========================
@@ -2649,415 +1520,21 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
   // ========================
   void _showRateSheet(int itemIndex) {
     final item = _itinerary!.dayPlans[_currentDay].items[itemIndex];
-    double tempRating = item.rating;
-    String tempFeeling = item.feeling ?? '';
-    double tempActualCost = item.actualCost;
-    ItemStatus tempStatus = item.status;
-    final feelingController = TextEditingController(text: tempFeeling);
-    final costController = TextEditingController(
-        text: tempActualCost > 0 ? tempActualCost.toStringAsFixed(0) : '');
-    final selectedTags = <String>{};
-    showManagedModalBottomSheet(
+    showItemRateSheet(
       context: context,
-      controllers: [feelingController, costController],
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final bottomPadding = MediaQuery.of(ctx).viewInsets.bottom;
-            return AnimatedPadding(
-              padding: EdgeInsets.only(bottom: bottomPadding),
-              duration: const Duration(milliseconds: 100),
-              child: GestureDetector(
-                onTap: () => FocusScope.of(ctx).unfocus(),
-                child: Container(
-                  padding: EdgeInsets.fromLTRB(
-                    18, 8, 18, 24 + MediaQuery.of(ctx).padding.bottom),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(20),
-                      topRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // 拖拽条
-                        Container(
-                          width: 36,
-                          height: 4,
-                          margin: const EdgeInsets.only(bottom: 14),
-                          decoration: BoxDecoration(
-                            color: AppTheme.borderColor,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        const Text('轻量快评 · 3 秒搞定',
-                            style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
-                                color: AppTheme.textPrimary)),
-                        const SizedBox(height: 14),
-                        // 项目信息
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppTheme.backgroundColor,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(9),
-                                ),
-                                child: Center(
-                                    child: Text(item.emoji,
-                                        style: const TextStyle(fontSize: 20))),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(item.title,
-                                        style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppTheme.textPrimary)),
-                                    if (item.note != null && item.note!.isNotEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2),
-                                        child: Text(
-                                          item.note!,
-                                          style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppTheme.textTertiary),
-                                        ),
-                                      ),
-                                    Text(
-                                        '${item.time} · ¥${item.cost.toStringAsFixed(0)} · Day ${_currentDay + 1}',
-                                        style: const TextStyle(
-                                            fontSize: 12,
-                                            color: AppTheme.textTertiary)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        // 星级评分
-                        Row(
-                          children: [
-                            const Text('⭐ 快速评分',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textSecondary)),
-                            const Spacer(),
-                            if (tempRating > 0)
-                              Text(
-                                '${tempRating.toInt()} 星',
-                                style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFFFFB300)),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(5, (i) {
-                            return GestureDetector(
-                              onTap: () {
-                                setSheetState(
-                                    () => tempRating = i + 1 == tempRating ? 0 : (i + 1).toDouble());
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 10),
-                                child: Text(
-                                  i < tempRating ? '★' : '☆',
-                                  style: TextStyle(
-                                    fontSize: 34,
-                                    color: i < tempRating
-                                        ? const Color(0xFFFFB300)
-                                        : const Color(0xFFE5E7EB),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
-                        ),
-                        const SizedBox(height: 8),
-                        // 快捷标签
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: ['超出预期', '人太多了', '景色超美', '值得二刷', '排队很久', '出片很棒']
-                              .map((tag) {
-                            final isOn = selectedTags.contains(tag);
-                            return GestureDetector(
-                              onTap: () {
-                                setSheetState(() {
-                                  if (isOn) {
-                                    selectedTags.remove(tag);
-                                  } else {
-                                    selectedTags.add(tag);
-                                  }
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: isOn
-                                      ? const Color(0xFFE3F2FD)
-                                      : AppTheme.backgroundColor,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: isOn
-                                        ? const Color(0xFFBBDEFB)
-                                        : Colors.transparent,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Text(tag,
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color: isOn
-                                            ? AppTheme.primaryColor
-                                            : AppTheme.textSecondary)),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 12),
-                        // 实际花费
-                        Row(
-                          children: [
-                            const Text('💰 实际花费',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textSecondary)),
-                            const SizedBox(width: 4),
-                            Text('可选',
-                                style: TextStyle(
-                                    fontSize: 13, color: AppTheme.textTertiary)),
-                            const Spacer(),
-                            Text('预估 ¥${item.cost.toStringAsFixed(0)}',
-                                style: const TextStyle(
-                                    fontSize: 12, color: AppTheme.textTertiary)),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: costController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: InputDecoration(
-                            prefixText: '¥ ',
-                            prefixStyle: const TextStyle(
-                                fontSize: 15, color: AppTheme.textPrimary),
-                            hintText: '填写实际花费',
-                            filled: true,
-                            fillColor: AppTheme.backgroundColor,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.borderColor),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.borderColor),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.primaryColor),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        // 感受（一句话备注）
-                        Row(
-                          children: [
-                            const Text('📝 一句话备注',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textSecondary)),
-                            const SizedBox(width: 4),
-                            Text('可选',
-                                style: TextStyle(
-                                    fontSize: 13, color: AppTheme.textTertiary)),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: feelingController,
-                          maxLength: 50,
-                          decoration: InputDecoration(
-                            hintText: '比如：景区大巴很方便，电梯省时..',
-                            filled: true,
-                            fillColor: AppTheme.backgroundColor,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.borderColor),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.borderColor),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide:
-                                  const BorderSide(color: AppTheme.primaryColor),
-                            ),
-                          ),
-                          maxLines: 3,
-                          minLines: 2,
-                        ),
-                        const SizedBox(height: 14),
-                        // 状态选项
-                        Row(
-                          children: [
-                            const Text('🔄 状态',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textSecondary)),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            _statusOption(ctx, setSheetState, '✅', '已完成',
-                                ItemStatus.completed, tempStatus,
-                                (v) => tempStatus = v),
-                            const SizedBox(width: 8),
-                            _statusOption(ctx, setSheetState, '⏭️', '跳过',
-                                ItemStatus.skipped, tempStatus,
-                                (v) => tempStatus = v),
-                            const SizedBox(width: 8),
-                            _statusOption(ctx, setSheetState, '⏸', '稍后',
-                                ItemStatus.pending, tempStatus,
-                                (v) => tempStatus = v),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        // 按钮
-                        Row(
-                          children: [
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () => Navigator.pop(ctx),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.backgroundColor,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Center(
-                                    child: Text('取消',
-                                        style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppTheme.textSecondary)),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () {
-                                  final costText = costController.text.trim();
-                                  final actualCost = costText.isNotEmpty
-                                      ? (double.tryParse(costText) ?? 0)
-                                      : 0.0;
-                                  _saveRate(itemIndex, tempRating,
-                                      feelingController.text, tempStatus, actualCost);
-                                  Navigator.pop(ctx);
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.accentMint,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Center(
-                                    child: Text('保存评价',
-                                        style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.white)),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-  Widget _statusOption(
-    BuildContext ctx,
-    StateSetter setSheetState,
-    String emoji,
-    String label,
-    ItemStatus value,
-    ItemStatus current,
-    ValueChanged<ItemStatus> onChanged,
-  ) {
-    final isSelected = current == value;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setSheetState(() => onChanged(value)),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFFE3F2FD) : AppTheme.backgroundColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? AppTheme.primaryColor : Colors.transparent,
-              width: 1.5,
-            ),
-          ),
-          child: Column(
-            children: [
-              Text(emoji, style: const TextStyle(fontSize: 20)),
-              const SizedBox(height: 4),
-              Text(label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
-                  )),
-            ],
-          ),
-        ),
+      item: item,
+      dayNumber: _currentDay + 1,
+      onSave: (result) => _saveRate(
+        itemIndex,
+        result.rating,
+        result.feeling,
+        result.status ?? item.status,
+        result.actualCost,
+        result.quickTags,
       ),
     );
   }
+
   // ========================
   // 操作
   // ========================
@@ -3085,7 +1562,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
       final updated = itinerary.copyWith(status: newStatus);
       if (!mounted) return;
       setState(() => _itinerary = updated);
-      await context.read<AppProvider>().saveItinerary(updated);
+      await context.read<ItineraryProvider>().saveItinerary(updated);
     }
   }
 
@@ -3117,12 +1594,12 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
     }
     final updated = _itinerary!.copyWith(dayPlans: dayPlans, status: status);
     setState(() => _itinerary = updated);
-    await context.read<AppProvider>().saveItinerary(updated);
+    await context.read<ItineraryProvider>().saveItinerary(updated);
     if (!mounted) return;
     await _checkAndUpdateItineraryStatus(updated);
   }
   Future<void> _saveRate(int itemIndex, double rating, String feeling,
-      ItemStatus status, double actualCost) async {
+      ItemStatus status, double actualCost, List<String> quickTags) async {
     final dayPlans = List<DayPlan>.from(_itinerary!.dayPlans);
     final items = List<ItineraryItem>.from(dayPlans[_currentDay].items);
     items[itemIndex] = items[itemIndex].copyWith(
@@ -3130,6 +1607,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
       feeling: feeling.isEmpty ? null : feeling,
       status: status,
       actualCost: actualCost,
+      quickTags: quickTags, // P1-2.4
     );
     dayPlans[_currentDay] = DayPlan(
       dayNumber: dayPlans[_currentDay].dayNumber,
@@ -3144,16 +1622,18 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
       itStatus = ItineraryStatus.ongoing;
     }
     final updated = _itinerary!.copyWith(dayPlans: dayPlans, status: itStatus);
-    setState(() => _itinerary = updated);
-    await context.read<AppProvider>().saveItinerary(updated);
+    // BugFix: 先持久化再 setState，避免 sheet 关闭期间触发 _dependents.isEmpty
+    await context.read<ItineraryProvider>().saveItineraryWithRating(updated);
     if (!mounted) return;
+    setState(() => _itinerary = updated);
     await _checkAndUpdateItineraryStatus(updated);
   }
+
   Future<void> _finishToday() async {
     final isLastDay = _currentDay >= _itinerary!.dayPlans.length - 1;
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      barrierColor: Colors.black54,
+      barrierColor: UdsColors.scrim,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -3233,13 +1713,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
                             colors: [Color(0xFF2196F3), Color(0xFF42A5F5)],
                           ),
                           borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF2196F3).withValues(alpha: 0.3),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                          boxShadow: UdsElevation.soft,
                         ),
                         child: const Center(
                           child: Text('确认',
@@ -3280,14 +1754,14 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
           : _itinerary!.status,
     );
     setState(() => _itinerary = updated);
-    await context.read<AppProvider>().saveItinerary(updated);
+    await context.read<ItineraryProvider>().saveItinerary(updated);
     await _checkAndUpdateItineraryStatus(updated);
     if (!mounted) return;
     if (isLastDay) {
       // 最后一天：弹窗提示是否转日记
       final toDiary = await showModalBottomSheet<bool>(
         context: context,
-        barrierColor: Colors.black54,
+        barrierColor: UdsColors.scrim,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -3367,13 +1841,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
                               colors: [Color(0xFF4CAF50), Color(0xFF66BB6A)],
                             ),
                             borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF4CAF50).withValues(alpha: 0.3),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
+                            boxShadow: UdsElevation.soft,
                           ),
                           child: const Center(
                             child: Text('转为日记',
@@ -3408,7 +1876,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
         (sum, day) => sum + day.items.length);
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      barrierColor: Colors.black54,
+      barrierColor: UdsColors.scrim,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -3508,13 +1976,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
                             colors: [Color(0xFF4CAF50), Color(0xFF66BB6A)],
                           ),
                           borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF4CAF50).withValues(alpha: 0.3),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                          boxShadow: UdsElevation.soft,
                         ),
                         child: const Center(
                           child: Text('确认转日记',
@@ -3534,58 +1996,11 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    // 构建结构化行程流水账数据
-    final buffer = StringBuffer();
-    final fmt = DateFormatUtil.monthDay();
-    for (int i = 0; i < _itinerary!.dayPlans.length; i++) {
-      final day = _itinerary!.dayPlans[i];
-      final dateStr = day.date != null ? '（${fmt.format(day.date!)}）' : '';
-      buffer.writeln('Day ${i + 1}$dateStr');
-      for (final item in day.items) {
-        final statusTag = item.status == ItemStatus.skipped ? '（已跳过）' : '';
-        final timePart = item.time.isNotEmpty ? '${item.time} ' : '';
-        // 预估花费和实际花费
-        final estPart = item.cost > 0 ? '预估¥${item.cost.toStringAsFixed(0)}' : '';
-        final actPart = item.actualCost > 0 ? '实际¥${item.actualCost.toStringAsFixed(0)}' : '';
-        final costPart = [if (estPart.isNotEmpty) estPart, if (actPart.isNotEmpty) actPart].join('，');
-        final costStr = costPart.isNotEmpty ? ' [$costPart]' : '';
-        // 一句话备注
-        final notePart = (item.note != null && item.note!.isNotEmpty)
-            ? ' 备注: ${item.note}'
-            : '';
-        // 感受
-        final feelingPart = (item.feeling != null && item.feeling!.isNotEmpty)
-            ? ' 感受: ${item.feeling}'
-            : '';
-        final ratingPart = item.rating > 0 ? ' ${item.rating.toInt()}星' : '';
-        buffer.writeln('  · $timePart${item.title}$statusTag$costStr$notePart$feelingPart$ratingPart');
-      }
-      // 住宿信息
-      if (day.accommodation != null) {
-        final acc = day.accommodation!;
-        buffer.writeln('  🏨 住宿: ${acc.displayText}');
-      }
-      if (i < _itinerary!.dayPlans.length - 1) buffer.writeln();
-    }
-    // 计算总花费：仅「已完成」项计入，跳过/稍后不计；已完成但未填实际花费则记为0
-    double totalActualCost = 0;
-    double ratingSum = 0;
-    int ratingCount = 0;
-    for (final day in _itinerary!.dayPlans) {
-      for (final item in day.items) {
-        if (item.status == ItemStatus.completed) {
-          totalActualCost += item.actualCost > 0 ? item.actualCost : 0;
-        }
-        if (item.rating > 0) {
-          ratingSum += item.rating;
-          ratingCount++;
-        }
-      }
-    }
-    final avgRating = ratingCount > 0
-        ? (ratingSum / ratingCount).roundToDouble()
-        : 0.0;
-    final itineraryItems = buffer.toString();
+    // P1-2.5：统一流水账生成
+    final itineraryItems = ItineraryDetailViewModel.buildItineraryDigest(_itinerary!);
+    final meta = ItineraryDetailViewModel.computeDiaryMeta(_itinerary!);
+    final totalActualCost = meta.totalActualCost;
+    final avgRating = meta.avgRating;
     if (!mounted) return;
     var loadingOpen = true;
     showDialog(
@@ -3699,7 +2114,10 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
         );
         return;
       }
-      final image = await boundary.toImage(pixelRatio: 2.5);
+      final dpr = MediaQuery.of(context).devicePixelRatio;
+      final image = await boundary.toImage(
+        pixelRatio: math.min(2.0, dpr),
+      );
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       entry.remove();
 
@@ -3751,7 +2169,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
             child: Column(
               children: [
                 Text(
-                  '${_getEmojiForDestination(_itinerary!.destination)} ${_itinerary!.destination}',
+                  '${ItineraryUiHelpers.emojiForDestination(_itinerary!.destination)} ${_itinerary!.destination}',
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -3760,7 +2178,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${_formatDateRange(_itinerary!.startDate, _itinerary!.endDate)} · ${_itinerary!.people}人 · ${_itinerary!.tripType}',
+                  '${ItineraryUiHelpers.formatDateRange(_itinerary!.startDate, _itinerary!.endDate)} · ${_itinerary!.people}人 · ${_itinerary!.tripType}',
                   style: const TextStyle(
                     fontSize: 13,
                     color: AppTheme.textSecondary,
@@ -3791,7 +2209,7 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
       description: '确定要删除「${_itinerary!.destination}」攻略吗？此操作无法撤销。',
     );
     if (confirmed != true || !mounted) return;
-    await context.read<AppProvider>().deleteItinerary(_itinerary!.id);
+    await context.read<ItineraryProvider>().deleteItinerary(_itinerary!.id);
     if (mounted) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3871,32 +2289,5 @@ class _ItineraryDetailPageState extends State<ItineraryDetailPage> {
       total += dayPlan.accommodation!.cost;
     }
     return total;
-  }
-  String _getEmojiForDestination(String destination) {
-    if (destination.contains('重庆')) return '🏯';
-    if (destination.contains('厦门')) return '🌊';
-    if (destination.contains('川西')) return '🗻';
-    if (destination.contains('桂林')) return '🏞️';
-    if (destination.contains('北京')) return '🏛️';
-    if (destination.contains('三亚')) return '🏖️';
-    if (destination.contains('西安')) return '🏺';
-    return '🗺️';
-  }
-
-  String _getEmojiForTripType(String type) {
-    switch (type) {
-      case '自然风景': return '🏞️';
-      case '海岛度假': return '🏖️';
-      case '人文古迹': return '🏛️';
-      case '美食之旅': return '🌶️';
-      case '城市漫步': return '🏙️';
-      case '自驾游': return '🚗';
-      default: return '🧳';
-    }
-  }
-  String _formatDateRange(DateTime? start, DateTime? end) {
-    if (start == null || end == null) return '待定';
-    final fmt = DateFormatUtil.monthDayShort();
-    return '${fmt.format(start)} - ${fmt.format(end)}';
   }
 }
